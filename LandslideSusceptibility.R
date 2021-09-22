@@ -154,6 +154,9 @@ tool_exec <- function(in_params, out_params) {
     terra::writeRaster(avgInitionProbRaster, paste0(outputDir, "/prob_avg.tif"), overwrite = TRUE)
     terra::writeRaster(minInitionProbRaster, paste0(outputDir, "/prob_min.tif"), overwrite = TRUE)
     terra::writeRaster(maxInitionProbRaster, paste0(outputDir, "/prob_max.tif"), overwrite = TRUE)
+  } else {
+    # Save single probability raster
+    terra::writeRaster(initiationProbRasterList[[1]], paste0(outputDir, "/prob.tif"), overwrite = TRUE)
   }
   
   # Return ---------------------------------------------------------------------
