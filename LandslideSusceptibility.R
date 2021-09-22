@@ -141,18 +141,20 @@ tool_exec <- function(in_params, out_params) {
   
   # Summarize initiation probability rasters -----------------------------------
   
-  # Combine probability rasters into a single multi-layer raster
-  initiationProbRaster <- terra::rast(initiationProbRasterList)
-  
-  # Generate summary initiation probability rasters
-  avgInitionProbRaster <- terra::app(initiationProbRaster, fun = "mean")
-  minInitionProbRaster <- terra::app(initiationProbRaster, fun = "min")
-  maxInitionProbRaster <- terra::app(initiationProbRaster, fun = "max")
-  
-  # Save summary rasters
-  terra::writeRaster(avgInitionProbRaster, paste0(outputDir, "/prob_avg.tif"), overwrite = TRUE)
-  terra::writeRaster(minInitionProbRaster, paste0(outputDir, "/prob_min.tif"), overwrite = TRUE)
-  terra::writeRaster(maxInitionProbRaster, paste0(outputDir, "/prob_max.tif"), overwrite = TRUE)
+  if (length(initiationProbRasterList) > 1) {
+    # Combine probability rasters into a single multi-layer raster
+    initiationProbRaster <- terra::rast(initiationProbRasterList)
+    
+    # Generate summary initiation probability rasters
+    avgInitionProbRaster <- terra::app(initiationProbRaster, fun = "mean")
+    minInitionProbRaster <- terra::app(initiationProbRaster, fun = "min")
+    maxInitionProbRaster <- terra::app(initiationProbRaster, fun = "max")
+    
+    # Save summary rasters
+    terra::writeRaster(avgInitionProbRaster, paste0(outputDir, "/prob_avg.tif"), overwrite = TRUE)
+    terra::writeRaster(minInitionProbRaster, paste0(outputDir, "/prob_min.tif"), overwrite = TRUE)
+    terra::writeRaster(maxInitionProbRaster, paste0(outputDir, "/prob_max.tif"), overwrite = TRUE)
+  }
   
   # Return ---------------------------------------------------------------------
   
