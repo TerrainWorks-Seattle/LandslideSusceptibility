@@ -10,9 +10,7 @@ tool_exec <- function(in_params, out_params) {
   initiationLimitScaler <- in_params[[5]]
   noninitiationPointsCount <- in_params[[6]]
   iterations <- in_params[[7]]
-  
-  # Output
-  outputDir <- out_params[[1]]
+  outputDir <- in_params[[8]]
   
   # Load rasters ---------------------------------------------------------------
   
@@ -178,11 +176,10 @@ if (FALSE) {
       bufferRadius = 20,
       initiationLimitScaler = 1.05,
       noninitiationPointsCount = 50,
-      iterations = 2
-    ),
-    out_params = list(
+      iterations = 2,
       outputDir = "C:/Work/netmapdata/Scottsburg"
-    )
+    ),
+    out_params = list()
   )
   
 }
