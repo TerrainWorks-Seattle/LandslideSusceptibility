@@ -1,28 +1,27 @@
 referenceRasterFile <- "C:/Work/netmapdata/Scottsburg/elev_scottsburg.flt"
-variableRasterFiles <- list(
+varRasterFiles <- list(
   "C:/Work/netmapdata/Scottsburg/grad_30.tif",
   "C:/Work/netmapdata/Scottsburg/plan_15.tif"
 )
 initiationPointsFile <- "C:/Work/netmapdata/Scottsburg/Scottsburg_Upslope.shp"
 bufferRadius <- 20
-initiationLimitScaler <- 1.1
+initiationLimitScaler <- 1.05
+noninitiationPointsCount <- 50
+iterations <- 2
 
 # Load rasters -----------------------------------------------------------------
 
 # Load reference raster
 referenceRaster <- terra::rast(referenceRasterFile)
 
-# Load input rasters
-inputRasters <- list(
-  terra::rast(variableRasterFiles[[1]]),
-  terra::rast(variableRasterFiles[[2]])
-)
+# Load explanatory variable rasters
+varRasterList <- lapply(varRasterFiles, function(file) terra::rast(file))
 
-# Align input rasters
-inputRasters <- TerrainWorksUtils::alignRasters(referenceRaster, inputRasters)
+# Align variable rasters
+varRasterList <- TerrainWorksUtils::alignRasters(referenceRaster, varRasterList)
 
-# Combine all input variable rasters into a single multi-layer raster
-inputVarsRaster <- c(inputRasters[[1]], inputRasters[[2]])
+# Combine variable rasters into a single multi-layer raster
+varsRaster <- terra::rast(varRasterList)
 
 # Create initiation regions ----------------------------------------------------
 
@@ -34,20 +33,20 @@ initiationPolys <- terra::buffer(initiationPoints, width = bufferRadius)
 
 # Calculate variables' initiation range ----------------------------------------
 
-# Extract input raster values within initiation regions
-initiationPoints <- terra::project(initiationPoints, referenceRaster)
-initiationValues <- terra::extract(inputVarsRaster, initiationPolys)
-initiationValues <- initiationValues[-1]
+# Extract variable values within initiation regions
+initiationPoints <- terra::project(initiationPoints, varsRaster)
+initiationValues <- terra::extract(varsRaster, initiationPolys)
+initiationValues <- initiationValues[-1] # Remove "ID" column
 
-# Define matrix to hold initiation limits
+# Define matrix to hold each variable's initiation value range
 initiationRange <- matrix(rep(NA, 4), nrow = 2)
-colnames(initiationRange) <- names(inputVarsRaster)
-rownames(initiationRange) <- c("min", "max")
+colnames(initiationRange) <- c("min", "max")
+rownames(initiationRange) <- names(varsRaster)
 
-# Populate matrix with limit values
-for (varName in names(inputVarsRaster)) {
-  initiationRange["min", varName] <- min(initiationValues[[varName]], na.rm = TRUE)
-  initiationRange["max", varName] <- max(initiationValues[[varName]], na.rm = TRUE)
+# Populate matrix with range limits
+for (varName in names(varsRaster)) {
+  initiationRange[varName, "min"] <- min(initiationValues[[varName]], na.rm = TRUE)
+  initiationRange[varName, "max"] <- max(initiationValues[[varName]], na.rm = TRUE)
 }
 
 # Scale limit values scale to broaden the limit
@@ -55,71 +54,94 @@ initiationRange <- initiationRange * initiationLimitScaler
 
 # Create initiation mask -------------------------------------------------------
 
-# Get all input variable values
-inputVarValues <- terra::values(inputVarsRaster)
+# Define a raster which will NA-out any cells with variable values outside of 
+# their initiation ranges
+initiationRaster <- terra::copy(varsRaster)
 
-for (varName in names(inputVarsRaster)) {
-  varRaster <- inputVarsRaster[[varName]]
+for (varName in names(initiationRaster)) {
+  varRaster <- initiationRaster[[varName]]
   
   # Get variable value limits
-  minInitiationValue <- initiationRange["min", varName]
-  maxInitiationValue <- initiationRange["max", varName]
+  minInitiationValue <- initiationRange[varName, "min"]
+  maxInitiationValue <- initiationRange[varName, "max"]
   
   # NA-out cells with values outside variable initiation range
-  varRaster <- terra::app(varRaster, fun = function(x) {
+  varInitiationRaster <- terra::app(varRaster, fun = function(x) {
     ifelse(x < minInitiationValue | x > maxInitiationValue, NA, x)
   })
   
   # Update the raster in the input raster stack
-  inputVarsRaster[[varName]] <- varRaster
+  initiationRaster[[varName]] <- varInitiationRaster
 }
 
-# NA-out all cells with values outside of initiation range
-initiationMask <- terra::app(inputVarsRaster, fun = "prod")
+# NA-out all cells with variable values outside of their initiation range
+initiationRaster <- terra::app(initiationRaster, fun = "prod")
 
 # NA-out all cells inside initiation regions
-initiationCells <- terra::extract(inputVarsRaster, initiationPolys, cells = TRUE)[["cell"]]
-initiationMask[initiationCells] <- NA
+initiationCells <- terra::extract(initiationRaster, initiationPolys, cells = TRUE)[["cell"]]
+initiationRaster[initiationCells] <- NA
 
-# Generate non-initiation regions ----------------------------------------------
+# Generate a set of initiation probability rasters -----------------------------
 
-# Sample points in areas that fit initiation parameters but recorded no landslides
-noninitiationPoints <- terra::spatSample(
-  initiationMask, size = 10, na.rm = TRUE, as.points = TRUE
-)
+initiationProbRasterList <- list()
 
-# Create buffer regions around non-initiation points
-noninitiationPolys <- terra::buffer(noninitiationPoints, width = bufferRadius)
+for (i in seq_len(iterations)) {
+  
+  ## Generate non-initiation regions -------------------------------------------
+  
+  # Sample points in areas that fit initiation ranges but recorded no landslides
+  noninitiationPoints <- terra::spatSample(
+    initiationRaster, size = noninitiationPointsCount, na.rm = TRUE, as.points = TRUE
+  )
+  
+  # Create buffer regions around non-initiation points
+  noninitiationPolys <- terra::buffer(noninitiationPoints, width = bufferRadius)
+  
+  ## Create training dataset ---------------------------------------------------
+  
+  # Extract variable values within non-initiation regions
+  noninitiationValues <- terra::extract(varsRaster, noninitiationPolys)
+  noninitiationValues <- noninitiationValues[-1] # Remove "ID" column
+  
+  # Assign a classification value to the inititiaion and non-initiation entries
+  initiationValues$class <- rep("initiation", nrow(initiationValues))
+  noninitiationValues$class <- rep("non-initiation", nrow(noninitiationValues))
+  
+  # Combine initiation and non-initiation entries into a single dataset
+  trainingData <- rbind(initiationValues, noninitiationValues)
+  
+  # Filter out entries with NA values
+  trainingData <- na.omit(trainingData)
+  
+  # Factor the classification variable values
+  trainingData$class <- factor(trainingData$class)
+  
+  ## Create random forest model ------------------------------------------------
+  
+  rfModel <- randomForest::randomForest(
+    formula = class ~ .,
+    data = trainingData
+  )
+  
+  ## Generate probability raster -----------------------------------------------
+  
+  initiationProbRaster <- terra::predict(
+    varsRaster,
+    rfModel,
+    na.rm = TRUE,
+    type = "prob"
+  )[["initiation"]]
+  
+  initiationProbRasterList[[i]] <- initiationProbRaster
+  
+}
 
-# Create training dataset ------------------------------------------------------
+# Summarize initiation probability rasters -------------------------------------
 
-noninitiationValues <- terra::extract(inputVarsRaster, noninitiationPolys)
-noninitiationValues <- noninitiationValues[-1]
+# Combine probability rasters into a single multi-layer raster
+initiationProbRaster <- terra::rast(initiationProbRasterList)
 
-initiationValues$class <- rep("initiation", nrow(initiationValues))
-noninitiationValues$class <- rep("non-initiation", nrow(noninitiationValues))
-
-# Combine initiation and non-initiation values into a single dataset
-trainingData <- rbind(initiationValues, noninitiationValues)
-
-trainingData <- na.omit(trainingData)
-
-trainingData$class <- factor(trainingData$class)
-
-# Create random forest model ---------------------------------------------------
-
-rfModel <- randomForest::randomForest(
-  formula = class ~ .,
-  data = trainingData,
-  ntree = 200
-)
-
-# Generate probability raster --------------------------------------------------
-
-probRaster <- terra::predict(
-  inputVarsRaster,
-  rfModel,
-  na.rm = TRUE,
-  type = "prob"
-)
-
+# Calculate average, minimum, and maximum initiation probability rasters
+avgInitionProbRaster <- terra::app(initiationProbRaster, fun = "mean")
+minInitionProbRaster <- terra::app(initiationProbRaster, fun = "min")
+maxInitionProbRaster <- terra::app(initiationProbRaster, fun = "max")
