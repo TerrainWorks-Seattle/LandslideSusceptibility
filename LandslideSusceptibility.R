@@ -17,13 +17,31 @@ tool_exec <- function(in_params, out_params) {
   logFilename <- "landslide_susceptibility_log.txt"
   file.create(paste0(outputDir, "/", logFilename))
   
-  cat(paste0("Running with input parameters:\n"), file = logFilename, append = TRUE)
+  logObj <- function(obj) {
+    capture.output(obj, file = paste0(outputDir, "/", logFilename), append = TRUE)
+  }
+  
+  logMsg <- function(msg) {
+    cat(msg, file = paste0(outputDir, "/", logFilename), append = TRUE)
+  }
+  
+  logMsg("Running with input parameters:\n")
+  logMsg(paste0("  Reference raster: ", referenceRasterFile, "\n"))
+  logMsg("  Explanatory variable rasters:\n")
+  for (i in seq_along(varRasterFiles)) { logMsg(paste0("  [", i, "] ", varRasterFiles[[i]], "\n")) }
+  logMsg(paste0("  Initiation points: ", initiationPointsFile, "\n"))
+  logMsg(paste0("  Buffer radius: ", bufferRadius, "\n"))
+  logMsg(paste0("  Initiation limit scaler: ", initiationLimitScaler, "\n"))
+  logMsg(paste0("  Non-initiation points count: ", noninitiationPointsCount, "\n"))
+  logMsg(paste0("  Iterations: ", iterations, "\n"))
+  logMsg(paste0("  Output directory: ", outputDir, "\n"))
+  logMsg("\n")
   
   # Load rasters ---------------------------------------------------------------
   
   # Load reference raster
   referenceRaster <- terra::rast(referenceRasterFile)
-  cat(paste0("Loaded reference raster: ", referenceRasterFile, "\n"), file = paste0(outputDir, "/", logFilename), append = TRUE)
+  logMsg(paste0("Loaded reference raster: ", referenceRasterFile, "\n"))
   
   # Load explanatory variable rasters
   varRasterList <- lapply(varRasterFiles, function(file) terra::rast(file))
@@ -38,7 +56,8 @@ tool_exec <- function(in_params, out_params) {
   
   # Load initiation points
   initiationPoints <- terra::vect(initiationPointsFile)
-  cat(paste0("Loaded initiation points: ", initiationPointsFile, "\n"), file = paste0(outputDir, "/", logFilename), append = TRUE)
+  logMsg(paste0("Loaded initiation points: ", initiationPointsFile, "\n"))
+  logMsg("\n")
   
   # Create buffer regions around initiation points
   initiationPolys <- terra::buffer(initiationPoints, width = bufferRadius)
@@ -64,8 +83,8 @@ tool_exec <- function(in_params, out_params) {
   # Expand limit values scale to broaden the limit
   initiationRange <- initiationRange * initiationLimitScaler
   
-  cat(paste0("Landslide initiation ranges:\n"), file = paste0(outputDir, "/", logFilename), append = TRUE)
-  capture.output(initiationRange, file = paste0(outputDir, "/", logFilename), append = TRUE)
+  logMsg("Landslide initiation ranges:\n")
+  logObj(initiationRange)
   
   # Create initiation mask -----------------------------------------------------
   
@@ -169,7 +188,7 @@ tool_exec <- function(in_params, out_params) {
     terra::writeRaster(initiationProbRasterList[[1]], paste0(outputDir, "/prob.tif"), overwrite = TRUE)
   }
   
-  cat(paste0("Saved summary initiation probability rasters"), file = paste0(outputDir, "/", logFilename), append = TRUE)
+  logMsg("Wrote summary initiation probability rasters")
   
   # Return ---------------------------------------------------------------------
   
