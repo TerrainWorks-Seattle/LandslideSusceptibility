@@ -12,10 +12,18 @@ tool_exec <- function(in_params, out_params) {
   iterations <- in_params[[7]]
   outputDir <- in_params[[8]]
   
+  # Set up logging -------------------------------------------------------------
+  
+  logFilename <- "landslide_susceptibility_log.txt"
+  file.create(paste0(outputDir, "/", logFilename))
+  
+  cat(paste0("Running with input parameters:\n"), file = logFilename, append = TRUE)
+  
   # Load rasters ---------------------------------------------------------------
   
   # Load reference raster
   referenceRaster <- terra::rast(referenceRasterFile)
+  cat(paste0("Loaded reference raster: ", referenceRasterFile, "\n"), file = paste0(outputDir, "/", logFilename), append = TRUE)
   
   # Load explanatory variable rasters
   varRasterList <- lapply(varRasterFiles, function(file) terra::rast(file))
@@ -30,6 +38,7 @@ tool_exec <- function(in_params, out_params) {
   
   # Load initiation points
   initiationPoints <- terra::vect(initiationPointsFile)
+  cat(paste0("Loaded initiation points: ", initiationPointsFile, "\n"), file = paste0(outputDir, "/", logFilename), append = TRUE)
   
   # Create buffer regions around initiation points
   initiationPolys <- terra::buffer(initiationPoints, width = bufferRadius)
@@ -52,8 +61,11 @@ tool_exec <- function(in_params, out_params) {
     initiationRange[varName, "max"] <- max(initiationValues[[varName]], na.rm = TRUE)
   }
   
-  # Scale limit values scale to broaden the limit
+  # Expand limit values scale to broaden the limit
   initiationRange <- initiationRange * initiationLimitScaler
+  
+  cat(paste0("Landslide initiation ranges:\n"), file = paste0(outputDir, "/", logFilename), append = TRUE)
+  capture.output(initiationRange, file = paste0(outputDir, "/", logFilename), append = TRUE)
   
   # Create initiation mask -----------------------------------------------------
   
@@ -157,6 +169,8 @@ tool_exec <- function(in_params, out_params) {
     terra::writeRaster(initiationProbRasterList[[1]], paste0(outputDir, "/prob.tif"), overwrite = TRUE)
   }
   
+  cat(paste0("Saved summary initiation probability rasters"), file = paste0(outputDir, "/", logFilename), append = TRUE)
+  
   # Return ---------------------------------------------------------------------
   
   return(out_params)
@@ -178,6 +192,24 @@ if (FALSE) {
       noninitiationPointsCount = 50,
       iterations = 2,
       outputDir = "C:/Work/netmapdata/Scottsburg"
+    ),
+    out_params = list()
+  )
+  
+  # Test in Scottsburg (WORK2)
+  tool_exec(
+    in_params = list(
+      referenceRasterFile = "E:/NetmapData/Scottsburg/elev_scottsburg.flt",
+      varRasterFiles <- list(
+        "E:/NetmapData/Scottsburg/grad_30.tif",
+        "E:/NetmapData/Scottsburg/plan_30.tif"
+      ),
+      initiationPointsFile = "E:/NetmapData/Scottsburg/Scottsburg_Upslope.shp",
+      bufferRadius = 20,
+      initiationLimitMultiplier = 1.05,
+      noninitiationPointsCount = 50,
+      iterations = 2,
+      outputDir = "E:/NetmapData/Scottsburg"
     ),
     out_params = list()
   )
