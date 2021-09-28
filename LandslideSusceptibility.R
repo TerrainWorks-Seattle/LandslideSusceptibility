@@ -7,7 +7,7 @@ tool_exec <- function(in_params, out_params) {
   varRasterFiles <- in_params[[2]]
   initiationPointsFile <- in_params[[3]]
   bufferRadius <- in_params[[4]]
-  initiationLimitScaler <- in_params[[5]]
+  initiationLimitPercent <- in_params[[5]]
   noninitiationPointsCount <- in_params[[6]]
   iterations <- in_params[[7]]
   outputDir <- in_params[[8]]
@@ -31,7 +31,7 @@ tool_exec <- function(in_params, out_params) {
   for (i in seq_along(varRasterFiles)) { logMsg(paste0("  [", i, "] ", varRasterFiles[[i]], "\n")) }
   logMsg(paste0("  Initiation points: ", initiationPointsFile, "\n"))
   logMsg(paste0("  Buffer radius: ", bufferRadius, "\n"))
-  logMsg(paste0("  Initiation limit scaler: ", initiationLimitScaler, "\n"))
+  logMsg(paste0("  Initiation limit scaler: ", initiationLimitPercent, "\n"))
   logMsg(paste0("  Non-initiation points count: ", noninitiationPointsCount, "\n"))
   logMsg(paste0("  Iterations: ", iterations, "\n"))
   logMsg(paste0("  Output directory: ", outputDir, "\n"))
@@ -52,22 +52,40 @@ tool_exec <- function(in_params, out_params) {
   # Combine variable rasters into a single multi-layer raster
   varsRaster <- terra::rast(varRasterList)
   
-  # Create initiation regions --------------------------------------------------
+  # Create initiation buffers --------------------------------------------------
   
   # Load initiation points
   initiationPoints <- terra::vect(initiationPointsFile)
+  initiationPoints <- terra::project(initiationPoints, referenceRaster)
   logMsg(paste0("Loaded initiation points: ", initiationPointsFile, "\n"))
   logMsg("\n")
   
-  # Create buffer regions around initiation points
-  initiationPolys <- terra::buffer(initiationPoints, width = bufferRadius)
+  # Create a buffer around each initiation point
+  initiationBuffers <- if (bufferRadius > 0) {
+    terra::buffer(initiationPoints, width = bufferRadius)
+  } else {
+    initiationPoints
+  }
   
   # Calculate variables' initiation range --------------------------------------
   
-  # Extract variable values within initiation regions
-  initiationPoints <- terra::project(initiationPoints, varsRaster)
-  initiationValues <- terra::extract(varsRaster, initiationPolys)
-  initiationValues <- initiationValues[-1] # Remove "ID" column
+  # Extract all variable values from initiation buffers
+  initiationValues <- terra::extract(varsRaster, initiationBuffers)
+  
+  # For each initiation buffer, find each variable's maximum value
+  regionMaxVarValues <- aggregate(. ~ ID, data = initiationValues, max)
+  regionMaxVarValues <- regionMaxVarValues[-1] # Remove "ID" column
+  initiationValues <- initiationValues[-1] # Remove the "ID" column
+  
+  # Find the min and max of the maximum variable values in each buffer 
+  initiationMinValues <- lapply(regionMaxVarValues, min)
+  initiationMaxValues <- lapply(regionMaxVarValues, max)
+
+  # Slightly expand initiation range
+  initiationLimitRatio <- initiationLimitPercent / 100  
+  
+  initiationMinValues <- lapply(initiationMinValues, function(x) x - initiationLimitRatio * x)
+  initiationMaxValues <- lapply(initiationMaxValues, function(x) x + initiationLimitRatio * x)
   
   # Define matrix to hold each variable's initiation value range
   initiationRange <- matrix(rep(NA, 4), nrow = 2)
@@ -76,12 +94,9 @@ tool_exec <- function(in_params, out_params) {
   
   # Populate matrix with range limits
   for (varName in names(varsRaster)) {
-    initiationRange[varName, "min"] <- min(initiationValues[[varName]], na.rm = TRUE)
-    initiationRange[varName, "max"] <- max(initiationValues[[varName]], na.rm = TRUE)
+    initiationRange[varName, "min"] <- initiationMinValues[[varName]]
+    initiationRange[varName, "max"] <- initiationMaxValues[[varName]]
   }
-  
-  # Expand limit values scale to broaden the limit
-  initiationRange <- initiationRange * initiationLimitScaler
   
   logMsg("Landslide initiation ranges:\n")
   logObj(initiationRange)
@@ -96,8 +111,8 @@ tool_exec <- function(in_params, out_params) {
     varRaster <- initiationRaster[[varName]]
     
     # Get variable value limits
-    minInitiationValue <- initiationRange[varName, "min"]
-    maxInitiationValue <- initiationRange[varName, "max"]
+    minInitiationValue <- initiationMinValues[[varName]]
+    maxInitiationValue <- initiationMaxValues[[varName]]
     
     # NA-out cells with values outside variable initiation range
     varInitiationRaster <- terra::app(varRaster, fun = function(x) {
@@ -112,7 +127,7 @@ tool_exec <- function(in_params, out_params) {
   initiationRaster <- terra::app(initiationRaster, fun = "prod")
   
   # NA-out all cells inside initiation regions
-  initiationCells <- terra::extract(initiationRaster, initiationPolys, cells = TRUE)[["cell"]]
+  initiationCells <- terra::extract(initiationRaster, initiationBuffers, cells = TRUE)[["cell"]]
   initiationRaster[initiationCells] <- NA
   
   # Generate a set of initiation probability rasters ---------------------------
@@ -122,18 +137,43 @@ tool_exec <- function(in_params, out_params) {
   for (i in seq_len(iterations)) {
     ## Generate non-initiation regions -----------------------------------------
     
-    # Sample points in areas that fit initiation ranges but recorded no landslides
-    noninitiationPoints <- terra::spatSample(
-      initiationRaster, size = noninitiationPointsCount, na.rm = TRUE, as.points = TRUE
-    )
+    # NOTE: terra::spatSample() sometimes generates less than the requested 
+    # number of points if the sample raster has a lot of NAs. This is remedied 
+    # by iteratively requesting a larger and larger number of points until
+    # enough have been generating, then subsetting those.
     
-    # Create buffer regions around non-initiation points
-    noninitiationPolys <- terra::buffer(noninitiationPoints, width = bufferRadius)
+    hasGeneratedEnough <- FALSE
+    requestCount <- noninitiationPointsCount
     
+    while (!hasGeneratedEnough) {
+      # Sample points in areas that fit initiation ranges but recorded no landslides
+      noninitiationPoints <- terra::spatSample(
+        initiationRaster,
+        size = requestCount,
+        na.rm = TRUE,
+        as.points = TRUE,
+        warn = FALSE
+      )
+      
+      if (length(noninitiationPoints) >= noninitiationPointsCount) {
+        noninitiationPoints <- noninitiationPoints[seq_len(noninitiationPointsCount)]
+        hasGeneratedEnough <- TRUE
+      }
+      
+      requestCount <- requestCount * 10
+    }
+    
+    # Create a buffer around each non-initiation point
+    noninitiationBuffers <- if (bufferRadius > 0) {
+      terra::buffer(noninitiationPoints, width = bufferRadius)
+    } else {
+      noninitiationPoints
+    }
+      
     ## Create training dataset -------------------------------------------------
     
-    # Extract variable values within non-initiation regions
-    noninitiationValues <- terra::extract(varsRaster, noninitiationPolys)
+    # Extract variable values within non-initiation buffers
+    noninitiationValues <- terra::extract(varsRaster, noninitiationBuffers)
     noninitiationValues <- noninitiationValues[-1] # Remove "ID" column
     
     # Assign a classification value to the initiation and non-initiation entries
@@ -203,13 +243,13 @@ if (FALSE) {
       referenceRasterFile = "C:/Work/netmapdata/Scottsburg/elev_scottsburg.flt",
       varRasterFiles <- list(
         "C:/Work/netmapdata/Scottsburg/grad_30.tif",
-        "C:/Work/netmapdata/Scottsburg/plan_15.tif"
+        "C:/Work/netmapdata/Scottsburg/plan_30.tif"
       ),
       initiationPointsFile = "C:/Work/netmapdata/Scottsburg/Scottsburg_Upslope.shp",
       bufferRadius = 20,
-      initiationLimitScaler = 1.05,
+      initiationLimitPercent = 20,
       noninitiationPointsCount = 50,
-      iterations = 2,
+      iterations = 3,
       outputDir = "C:/Work/netmapdata/Scottsburg"
     ),
     out_params = list()
