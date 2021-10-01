@@ -140,7 +140,7 @@ tool_exec <- function(in_params, out_params) {
     # NOTE: terra::spatSample() sometimes generates less than the requested 
     # number of points if the sample raster has a lot of NAs. This is remedied 
     # by iteratively requesting a larger and larger number of points until
-    # enough have been generating, then subsetting those.
+    # enough have been generatied, then subsetting those.
     
     hasGeneratedEnough <- FALSE
     requestCount <- noninitiationPointsCount
