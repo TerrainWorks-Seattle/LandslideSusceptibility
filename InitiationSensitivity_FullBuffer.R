@@ -196,7 +196,7 @@ tool_exec <- function(in_params, out_params) {
   
   for (i in seq_along(testingSets)) {
     logMsg(paste0("Model ", formatC(i, width = 2, format = "d", flag = "0"), 
-                  " -------------------------------------------\n"))
+                  " -------------------------------------------\n\n"))
     
     ## Create training dataset -------------------------------------------------
     
@@ -233,12 +233,14 @@ tool_exec <- function(in_params, out_params) {
     )
     
     # Log model error rates
-    logMsg("Error rates:\n")
-    logObj(rfModel$err.rate[rfModel$ntree,])
+    logMsg("ERROR RATES:\n")
+    errorRateDf <- data.frame(rfModel$err.rate[rfModel$ntree,])
+    colnames(errorRateDf) <- "error rate"
+    logObj(errorRateDf)
     logMsg("\n")
     
     # Log model confusion matrix
-    logMsg("Model confusion matrix:\n")
+    logMsg("MODEL CONFUSION MATRIX:\n")
     logObj(rfModel$confusion)
     logMsg("\n")
     
@@ -293,7 +295,7 @@ tool_exec <- function(in_params, out_params) {
     )
     
     # Log test dataset confusion matrix
-    logMsg("Testing confusion matrix:")
+    logMsg("TESTING CONFUSION MATRIX:")
     logObj(table(predictedClass, testingData$class))
     logMsg("\n")
     
@@ -316,7 +318,7 @@ tool_exec <- function(in_params, out_params) {
     
     # Log AUC value
     auc <- rocStats$auc@y.values[[1]]
-    logMsg(paste0("AUC: ", auc, "\n\n"))
+    logMsg(paste0("AUC: ", round(auc, digits = 7), "\n\n"))
     
     ## Record iteration statistics ---------------------------------------------
     
@@ -326,7 +328,7 @@ tool_exec <- function(in_params, out_params) {
   
   # Summarize iterations -------------------------------------------------------
   
-  logMsg("Summary ------------------------------------------\n")
+  logMsg("SUMMARY --------------------------------------------\n\n")
   
   # Calculate AUC summary stats
   aucMin <- min(iterationsAucValues)
@@ -335,10 +337,12 @@ tool_exec <- function(in_params, out_params) {
   aucStdev <- sd(iterationsAucValues)
   
   aucMatrix <- matrix(c(aucMin, aucMax, aucRange, aucStdev), ncol = 1)
-  rownames(aucMatrix) <- c("Min", "Max", "Range", "Stdev")
+  aucMatrix <- t(aucMatrix)
+  colnames(aucMatrix) <- c("Min", "Max", "Range", "Stdev")
+  rownames(aucMatrix) <- "AUC"
   
   # Log standard deviation of AUC values
-  logMsg("AUC stats:\n")
+  logMsg("AUC:\n")
   logObj(aucMatrix)
   logMsg("\n")
   
@@ -357,11 +361,13 @@ tool_exec <- function(in_params, out_params) {
     errorRateStdev
   )
   
+  errorRateDf <- t(errorRateDf)
+  
   errorRateMatrix <- as.matrix(errorRateDf)
-  rownames(errorRateMatrix) <- c("Min", "Max", "Range", "Stdev")
+  colnames(errorRateMatrix) <- c("min", "max", "range", "stdev")
   
   # Log error rates stats
-  logMsg("Error rate stats:\n")
+  logMsg("ERROR RATES:\n")
   logObj(errorRateMatrix)
   
   # Return ---------------------------------------------------------------------
