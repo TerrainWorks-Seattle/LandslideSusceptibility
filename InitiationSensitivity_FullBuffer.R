@@ -7,6 +7,162 @@
 
 tool_exec <- function(in_params, out_params) {
   
+  # Helper functions ----------------------------------------------------
+  
+  createNoninitiationRaster <- function(varsRaster, initiationBuffers, initiationLimitPercent) {
+    # Calculate initiation range for each variable
+    initiationRange <- createInitiationRange(varsRaster, initiationBuffers, initiationLimitRatio)
+    
+    initiationRaster <- terra::copy(varsRaster)
+    for (varName in names(initiationRaster)) {
+      varRaster <- initiationRaster[[varName]]
+      
+      # Get variable value limits
+      minInitiationValue <- initiationRange[varName, "min"]
+      maxInitiationValue <- initiationRange[varName, "max"]
+      
+      # NA-out cells with values outside variable initiation range
+      varInitiationRaster <- terra::app(varRaster, fun = function(x) {
+        ifelse(x < minInitiationValue | x > maxInitiationValue, NA, x)
+      })
+      
+      # Update the raster in the input raster stack
+      initiationRaster[[varName]] <- varInitiationRaster
+    }
+    
+    # NA-out cells with variable values outside their initiation range
+    initiationRaster <- terra::app(initiationRaster, fun = "prod")
+    
+    # NA-out cells within initiation buffers
+    initiationCells <- terra::extract(initiationRaster, initiationBuffers, cells = TRUE)[["cell"]]
+    initiationRaster[initiationCells] <- NA
+    
+    return(initiationRaster)
+  }
+  
+  createInitiationRange <- function(varsRaster, initiationBuffers, initiationLimitRatio) {
+    # Extract all variable values from initiation buffers
+    initiationValues <- terra::extract(varsRaster, initiationBuffers)
+    
+    # For each initiation buffer, find each variable's maximum value
+    regionMaxVarValues <- aggregate(. ~ ID, data = initiationValues, max)
+    regionMaxVarValues$ID <- NULL # Remove "ID" column
+    initiationValues$ID <- NULL # Remove the "ID" column
+    
+    # Find the min and max of the maximum variable values in each buffer 
+    initiationMinValues <- lapply(regionMaxVarValues, min)
+    initiationMaxValues <- lapply(regionMaxVarValues, max)
+    
+    # Slightly expand initiation range
+    initiationLimitRatio <- initiationLimitPercent / 100  
+    initiationMinValues <- lapply(initiationMinValues, function(x) x - initiationLimitRatio * x)
+    initiationMaxValues <- lapply(initiationMaxValues, function(x) x + initiationLimitRatio * x)
+    
+    # Create a matrix that holds each variable's initiation range
+    initiationRange <- matrix(rep(NA, 4), nrow = 2)
+    colnames(initiationRange) <- c("min", "max")
+    rownames(initiationRange) <- names(varsRaster)
+    for (varName in names(varsRaster)) {
+      initiationRange[varName, "min"] <- initiationMinValues[[varName]]
+      initiationRange[varName, "max"] <- initiationMaxValues[[varName]]
+    }
+    
+    return(initiationRange)
+  }
+  
+  generateNoninitiationBuffers <- function(initiationPoints, noninitiationRatio, noninitiationRaster, bufferRadius) {
+    # NOTE: terra::spatSample() sometimes generates less than the requested 
+    # number of points if the sample raster has a lot of NAs. This is remedied 
+    # by repeatedly requesting a larger and larger number of points until
+    # enough have been generated, then subsetting those.
+    
+    desiredNoninitiationCount <- ceiling(length(initiationPoints) * noninitiationRatio)
+    hasGeneratedEnough <- FALSE
+    requestCount <- desiredNoninitiationCount
+    
+    while (!hasGeneratedEnough) {
+      # Sample points anywhere that fits initiation conditions but recorded no landslides
+      noninitiationPoints <- terra::spatSample(
+        noninitiationRaster,
+        size = requestCount,
+        na.rm = TRUE,
+        as.points = TRUE,
+        warn = FALSE
+      )
+      
+      # Exit once enough non-initiation points have been generated
+      if (length(noninitiationPoints) >= desiredNoninitiationCount) {
+        noninitiationPoints <- noninitiationPoints[seq_len(desiredNoninitiationCount)]
+        hasGeneratedEnough <- TRUE
+      }
+      
+      requestCount <- requestCount * 10
+    }
+    
+    # Create a buffer around each non-initiation point
+    noninitiationBuffers <- if (bufferRadius > 0) {
+      terra::buffer(noninitiationPoints, width = bufferRadius)
+    } else {
+      noninitiationPoints
+    }
+    
+    return(noninitiationBuffers)
+  }
+  
+  createTrainingData <- function(varsRaster, initiationBuffers, testingInitiationIndices, trainingNoninitaitonBuffers) {
+    # Get training initiation buffers
+    trainingInitiationIndices <- setdiff(seq_along(initiationBuffers), testingInitiationIndices)
+    trainingInitiationBuffers <- initiationBuffers[trainingInitiationIndices]
+    
+    # Extract values from initiation and non-initiation training buffers
+    trainingInitiationValues <- terra::extract(varsRaster, trainingInitiationBuffers)
+    trainingNoninitiationValues <- terra::extract(varsRaster, trainingNoninitiationBuffers)
+    
+    # Assign a classification value to each entry
+    trainingInitiationValues$class <- rep("initiation", nrow(trainingInitiationValues))
+    trainingNoninitiationValues$class <- rep("non-initiation", nrow(trainingNoninitiationValues))
+    
+    # Combine initiation and non-initiation entries into a single dataset
+    trainingData <- rbind(trainingInitiationValues, trainingNoninitiationValues)
+    
+    # Remove the "ID" column
+    trainingData$ID <- NULL
+    
+    # Factor the classification variable values
+    trainingData$class <- factor(trainingData$class)
+    
+    # Filter out entries with NA values
+    trainingData <- na.omit(trainingData)
+    
+    return(trainingData)
+  }
+  
+  createTestingData <- function(varsRaster, initiationBuffers, testingInitiationIndices, testingNoninitiationBuffers) {
+    # Get testing buffers
+    testingInitiationBuffers <- initiationBuffers[testingInitiationIndices]
+    
+    # Extract values from testing buffers
+    testingInitiationValues <- terra::extract(varsRaster, testingInitiationBuffers)
+    testingNoninitiationValues <- terra::extract(varsRaster, testingNoninitiationBuffers)
+    
+    # Assign a classification value to each entry
+    testingInitiationValues$class <- rep("initiation", nrow(testingInitiationValues))
+    testingNoninitiationValues$class <- rep("non-initiation", nrow(testingNoninitiationValues))
+    
+    # Combine initiation and non-initiation entries into a single dataset
+    testingData <- rbind(testingInitiationValues, testingNoninitiationValues)
+    
+    # Remove "ID" column
+    testingData$ID <- NULL
+    
+    # Factor the classification variable values
+    testingData$class <- factor(testingData$class)
+    
+    # Filter out entries with NA values
+    testingData <- na.omit(testingData)
+    
+  }
+  
   # Set parameters -------------------------------------------------------------
   
   # Input
@@ -60,109 +216,29 @@ tool_exec <- function(in_params, out_params) {
     initiationPoints
   }
   
-  # Calculate variables' initiation range --------------------------------------
-  
-  # Extract all variable values from initiation buffers
-  initiationValues <- terra::extract(varsRaster, initiationBuffers)
-  
-  # For each initiation buffer, find each variable's maximum value
-  regionMaxVarValues <- aggregate(. ~ ID, data = initiationValues, max)
-  regionMaxVarValues <- regionMaxVarValues[-1] # Remove "ID" column
-  initiationValues <- initiationValues[-1] # Remove the "ID" column
-  
-  # Find the min and max of the maximum variable values in each buffer 
-  initiationMinValues <- lapply(regionMaxVarValues, min)
-  initiationMaxValues <- lapply(regionMaxVarValues, max)
-  
-  # Slightly expand initiation range
-  initiationLimitRatio <- initiationLimitPercent / 100  
-  
-  initiationMinValues <- lapply(initiationMinValues, function(x) x - initiationLimitRatio * x)
-  initiationMaxValues <- lapply(initiationMaxValues, function(x) x + initiationLimitRatio * x)
-  
-  # Define matrix to hold each variable's initiation value range
-  initiationRange <- matrix(rep(NA, 4), nrow = 2)
-  colnames(initiationRange) <- c("min", "max")
-  rownames(initiationRange) <- names(varsRaster)
-  
-  # Populate matrix with range limits
-  for (varName in names(varsRaster)) {
-    initiationRange[varName, "min"] <- initiationMinValues[[varName]]
-    initiationRange[varName, "max"] <- initiationMaxValues[[varName]]
-  }
-  
-  # Create initiation mask -----------------------------------------------------
-  
-  # Define a raster which will NA-out any cells with variable values outside of 
-  # their initiation ranges
-  initiationRaster <- terra::copy(varsRaster)
-  
-  for (varName in names(initiationRaster)) {
-    varRaster <- initiationRaster[[varName]]
-    
-    # Get variable value limits
-    minInitiationValue <- initiationMinValues[[varName]]
-    maxInitiationValue <- initiationMaxValues[[varName]]
-    
-    # NA-out cells with values outside variable initiation range
-    varInitiationRaster <- terra::app(varRaster, fun = function(x) {
-      ifelse(x < minInitiationValue | x > maxInitiationValue, NA, x)
-    })
-    
-    # Update the raster in the input raster stack
-    initiationRaster[[varName]] <- varInitiationRaster
-  }
-  
-  # NA-out all cells with variable values outside of their initiation range
-  initiationRaster <- terra::app(initiationRaster, fun = "prod")
-  
-  # NA-out all cells inside initiation regions
-  initiationCells <- terra::extract(initiationRaster, initiationBuffers, cells = TRUE)[["cell"]]
-  initiationRaster[initiationCells] <- NA
-  
   # Generate non-initiation buffers --------------------------------------------
   
-  # NOTE: terra::spatSample() sometimes generates less than the requested 
-  # number of points if the sample raster has a lot of NAs. This is remedied 
-  # by repeatedly requesting a larger and larger number of points until
-  # enough have been generated, then subsetting those.
+  # The region where non-initiation buffers can be sampled from
+  noninitiationRaster <- createNoninitiationRaster(
+    varsRaster,
+    initiationBuffers,
+    initiationLimitPercent
+  )
   
-  desiredNoninitiationCount <- ceiling(length(initiationPoints) * noninitiationRatio)
-  hasGeneratedEnough <- FALSE
-  requestCount <- desiredNoninitiationCount
-  
-  while (!hasGeneratedEnough) {
-    # Sample points anywhere that fits initiation conditions but recorded no landslides
-    noninitiationPoints <- terra::spatSample(
-      initiationRaster,
-      size = requestCount,
-      na.rm = TRUE,
-      as.points = TRUE,
-      warn = FALSE
-    )
-    
-    # Exit once enough non-initiation points have been generated
-    if (length(noninitiationPoints) >= desiredNoninitiationCount) {
-      noninitiationPoints <- noninitiationPoints[seq_len(desiredNoninitiationCount)]
-      hasGeneratedEnough <- TRUE
-    }
-    
-    requestCount <- requestCount * 10
-  }
-  
-  # Create a buffer around each non-initiation point
-  noninitiationBuffers <- if (bufferRadius > 0) {
-    terra::buffer(noninitiationPoints, width = bufferRadius)
-  } else {
-    noninitiationPoints
-  }
+  # Sites in areas that meet initiation conditions but recorded no landslides
+  noninitiationBuffers <- generateNoninitiationBuffers(
+    initiationPoints,
+    noninitiationRatio,
+    noninitiationRaster,
+    bufferRadius
+  )
   
   # Create initiation buffer sets ----------------------------------------------
   
-  # Calculate how many initiation buffers there should be for testing each iteration
+  # Calculate how many testing initiation buffers there should be per iteration
   testingInitiationBuffersPerIteration <- floor(length(initiationBuffers) / k)
   
-  # Create k unique sets of initiation buffers to use for training and testing
+  # Create k sets of initiation buffers to use for training and testing
   testingSets <- list()
   testingFreeInitiationIndices <- seq_along(initiationBuffers)
   for (i in 1:k) {
@@ -173,7 +249,7 @@ tool_exec <- function(in_params, out_params) {
   
   # Create non-initiation buffer sets ------------------------------------------
   
-  # Create static sets of training and testing non-initiation buffers to use every iteration
+  # Create a static set of training and testing non-initiation buffers to use every iteration
   testingNoninitiationCount <- floor(testingInitiationBuffersPerIteration * noninitiationRatio)
   testingNoninitiationIndices <- sample(seq_along(noninitiationBuffers), size = testingNoninitiationCount)
   trainingNoninitiationIndices <- setdiff(seq_along(noninitiationBuffers), testingNoninitiationIndices)
@@ -183,10 +259,10 @@ tool_exec <- function(in_params, out_params) {
   
   # Perform cross-validation ---------------------------------------------------
   
-  # Place to store iteration auc values
+  # Place to store iteration model auc values
   iterationsAucValues <- c()
   
-  # Place to store iteration error rates
+  # Place to store iteration model error rates
   iterationsErrorRates <- data.frame(
     rep(NA, k),
     rep(NA, k),
@@ -195,42 +271,24 @@ tool_exec <- function(in_params, out_params) {
   names(iterationsErrorRates) <- c("OOB", "initiation", "non-initiation")
   
   for (i in seq_along(testingSets)) {
-    logMsg(paste0("Model ", formatC(i, width = 2, format = "d", flag = "0"), 
-                  " -------------------------------------------\n\n"))
-    
-    ## Create training dataset -------------------------------------------------
-    
-    # Get training initiation buffers
-    trainingInitiationIndices <- setdiff(seq_along(initiationBuffers), testingSets[[i]])
-    trainingInitiationBuffers <- initiationBuffers[trainingInitiationIndices]
-    
-    # Extract values from training buffers
-    trainingInitiationValues <- terra::extract(varsRaster, trainingInitiationBuffers)
-    trainingNoninitiationValues <- terra::extract(varsRaster, trainingNoninitiationBuffers)
-    
-    # Assign a classification value to each entry
-    trainingInitiationValues$class <- rep("initiation", nrow(trainingInitiationValues))
-    trainingNoninitiationValues$class <- rep("non-initiation", nrow(trainingNoninitiationValues))
-    
-    # Combine initiation and non-initiation entries into a single dataset
-    trainingData <- rbind(trainingInitiationValues, trainingNoninitiationValues)
-    
-    # Filter out entries with NA values
-    trainingData <- na.omit(trainingData)
-    
-    # Factor the classification variable values
-    trainingData$class <- factor(trainingData$class)
-    
-    # Remove "ID" column
-    trainingData$ID <- NULL
-    
     ## Create model ------------------------------------------------------------
     
-    # Create random forest model
+    # Create training dataset
+    trainingData <- createTrainingData(
+      varsRaster,
+      initiationBuffers,
+      testingSets[[i]],
+      trainingNoninitaitonBuffers
+    )
+    
+    # Train a new random forest model
     rfModel <- randomForest::randomForest(
       formula = class ~ .,
       data = trainingData
     )
+    
+    logMsg(paste0("Model ", formatC(i, width = 2, format = "d", flag = "0"), 
+                  " -------------------------------------------\n\n"))
     
     # Log model error rates
     logMsg("ERROR RATES:\n")
@@ -259,33 +317,15 @@ tool_exec <- function(in_params, out_params) {
       terra::writeRaster(initiationProbRaster, paste0(outputDir, "/prob_", i, ".tif"))
     }
     
-    ## Create testing dataset --------------------------------------------------
-    
-    # Get testing buffers
-    testingInitiationIndices <- testingSets[[i]]
-    testingInitiationBuffers <- initiationBuffers[testingInitiationIndices]
-    
-    # Extract values from testing buffers
-    testingInitiationValues <- terra::extract(varsRaster, testingInitiationBuffers)
-    testingNoninitiationValues <- terra::extract(varsRaster, testingNoninitiationBuffers)
-    
-    # Assign a classification value to each entry
-    testingInitiationValues$class <- rep("initiation", nrow(testingInitiationValues))
-    testingNoninitiationValues$class <- rep("non-initiation", nrow(testingNoninitiationValues))
-    
-    # Combine initiation and non-initiation entries into a single dataset
-    testingData <- rbind(testingInitiationValues, testingNoninitiationValues)
-    
-    # Filter out entries with NA values
-    testingData <- na.omit(testingData)
-    
-    # Factor the classification variable values
-    testingData$class <- factor(testingData$class)
-    
-    # Remove "ID" column
-    testingData$ID <- NULL
-    
     ## Run model on testing data -----------------------------------------------
+    
+    # Creating testing data
+    testingData <- createTestingData(
+      varsRaster,
+      initiationBuffers,
+      testingSets[[i]],
+      testingNoninitiationBuffers
+    )
     
     # Predict the class type of each test dataset entry
     predictedClass <- predict(
@@ -298,8 +338,6 @@ tool_exec <- function(in_params, out_params) {
     logMsg("TESTING CONFUSION MATRIX:")
     logObj(table(predictedClass, testingData$class))
     logMsg("\n")
-    
-    ## Run model on testing data -----------------------------------------------
     
     # Calculate initiation probability for each test entry
     initiationProb <- predict(
@@ -320,8 +358,7 @@ tool_exec <- function(in_params, out_params) {
     auc <- rocStats$auc@y.values[[1]]
     logMsg(paste0("AUC: ", round(auc, digits = 7), "\n\n"))
     
-    ## Record iteration statistics ---------------------------------------------
-    
+    # Record iteration statistics
     iterationsAucValues <- c(iterationsAucValues, auc)
     iterationsErrorRates[i,] <- as.data.frame(rfModel$err.rate)[rfModel$ntree,]
   }
@@ -338,7 +375,7 @@ tool_exec <- function(in_params, out_params) {
   
   aucMatrix <- matrix(c(aucMin, aucMax, aucRange, aucStdev), ncol = 1)
   aucMatrix <- t(aucMatrix)
-  colnames(aucMatrix) <- c("Min", "Max", "Range", "Stdev")
+  colnames(aucMatrix) <- c("min", "max", "range", "stdev")
   rownames(aucMatrix) <- "AUC"
   
   # Log standard deviation of AUC values
