@@ -269,12 +269,16 @@ tool_exec <- function(in_params, out_params) {
     varInitiationValues <- allBuffersData[allBuffersData$class == "initiation", varName]
     varNoninitiationValues <- allBuffersData[allBuffersData$class == "non-initiation", varName]
     
+    # Save plot as an image file
+    dev.new()
     boxplot(
       varInitiationValues, varNoninitiationValues,
       main = paste0(varName, " distribution"),
       names = c("Initiation", "Non-initiation"),
       col = c("green", "red")
     )
+    dev.copy(jpeg, paste0(outputDir, "/", varName, "_dist.jpeg"))
+    dev.off()
   }
   
   # Create initiation buffer sets ----------------------------------------------
