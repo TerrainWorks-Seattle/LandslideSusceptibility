@@ -128,13 +128,23 @@ tool_exec <- function(in_params, out_params) {
   # Create a dataset containing variable values and classes of cells within 
   # initiation and non-initiation buffers.
   extractBufferValues <- function(
-    varsRaster,          # A SpatRaster of explanatory variables
-    initiationBuffers,   # A SpatVector of initiation buffers
-    noninitiationBuffers # A SpatVector of non-initiation buffers
+    varsRaster,            # A SpatRaster of explanatory variables
+    initiationBuffers,     # A SpatVector of initiation buffers
+    noninitiationBuffers,  # A SpatVector of non-initiation buffers,
+    bufferExtractionMethod # Method to use for extracting buffer values 
   ) {
-    # Extract values from initiation and non-initiation buffers
+    # By default, extract all values from initiation and non-initiation buffers
     initiationValues <- terra::extract(varsRaster, initiationBuffers)
     noninitiationValues <- terra::extract(varsRaster, noninitiationBuffers)
+    
+    # Subset if a different buffer extraction method was requested
+    if (bufferExtractionMethod == "steepest cell") {
+      # Group by buffer
+      # Keep entry with the max grad value of each group
+    } else if (bufferExtractionMethod == "most convergent cell") {
+      # Group by buffer
+      # Keep entry with the max plan value of each group
+    }
     
     # Assign a classification value to each entry
     initiationValues$class <- rep("initiation", nrow(initiationValues))
@@ -161,16 +171,17 @@ tool_exec <- function(in_params, out_params) {
   referenceRasterFile <- in_params[[1]]
   varRasterFiles <- in_params[[2]]
   initiationPointsFile <- in_params[[3]]
-  bufferRadius <- in_params[[4]]
-  initiationLimitPercent <- in_params[[5]]
-  noninitiationRatio <- in_params[[6]]
-  k <- in_params[[7]]
-  generateProbabilityRasters <- in_params[[8]]
-  outputDir <- in_params[[9]]
+  noninitiationRatio <- in_params[[4]]
+  bufferRadius <- in_params[[5]]
+  bufferExtractionMethod <- in_params[[6]]
+  initiationLimitPercent <- in_params[[7]]
+  k <- in_params[[8]]
+  generateProbabilityRasters <- in_params[[9]]
+  outputDir <- in_params[[10]]
   
   # Set up logging -------------------------------------------------------------
   
-  logFilename <- "initiation_sensitivity_full_buffer.txt"
+  logFilename <- "initiation_sensitivity.txt"
   file.create(paste0(outputDir, "/", logFilename))
   
   logObj <- function(obj) {
@@ -180,6 +191,20 @@ tool_exec <- function(in_params, out_params) {
   logMsg <- function(msg) {
     cat(msg, file = paste0(outputDir, "/", logFilename), append = TRUE)
   }
+  
+  # Log input parameters
+  logMsg("Input parameters:\n")
+  logMsg(paste0("  Reference raster: ", referenceRasterFile, "\n"))
+  logMsg("  Explanatory variable rasters:\n")
+  for (i in seq_along(varRasterFiles)) { logMsg(paste0("  [", i, "] ", varRasterFiles[[i]], "\n")) }
+  logMsg(paste0("  Initiation points: ", initiationPointsFile, "\n"))
+  logMsg(paste0("  Non-initiation points ratio: ", noninitiationRatio, "\n"))
+  logMsg(paste0("  Buffer radius: ", bufferRadius, "\n"))
+  logMsg(paste0("  Buffer extraction method: ", bufferExtractionMethod, "\n"))
+  logMsg(paste0("  Initiation limit percent: ", initiationLimitPercent, "%\n"))
+  logMsg(paste0("  k: ", k, "\n"))
+  logMsg(paste0("  Generate probability rasters: ", generateProbabilityRasters, "\n"))
+  logMsg(paste0("  Output directory: ", outputDir, "\n\n"))
   
   # Load rasters ---------------------------------------------------------------
   
@@ -279,7 +304,8 @@ tool_exec <- function(in_params, out_params) {
     trainingData <- extractBufferValues(
       varsRaster,
       trainingInitiationBuffers,
-      trainingNoninitiationBuffers
+      trainingNoninitiationBuffers,
+      bufferExtractionMethod
     )
     
     ## Create model ------------------------------------------------------------
@@ -329,7 +355,8 @@ tool_exec <- function(in_params, out_params) {
     testingData <- extractBufferValues(
       varsRaster,
       testingInitiationBuffers,
-      testingNoninitiationBuffers
+      testingNoninitiationBuffers,
+      bufferExtractionMethod
     )
     
     # Predict the class type of each test dataset entry
@@ -430,9 +457,10 @@ if (FALSE) {
         "C:/Work/netmapdata/Scottsburg/plan_30.tif"
       ),
       initiationPointsFile = "C:/Work/netmapdata/Scottsburg/Scottsburg_Upslope.shp",
-      bufferRadius = 20,
-      initiationLimitPercent = 10,
       noninitiationRatio = 1.5,
+      bufferRadius = 20,
+      bufferExtractionMethod = "all cells",
+      initiationLimitPercent = 10,
       k = 5,
       generateProbabilityRasters = FALSE,
       outputDir = "C:/Work/netmapdata/Scottsburg"
@@ -449,9 +477,10 @@ if (FALSE) {
         "E:/NetmapData/Scottsburg/plan_30.tif"
       ),
       initiationPointsFile = "E:/NetmapData/Scottsburg/Scottsburg_Upslope.shp",
-      bufferRadius = 20,
-      initiationLimitPercent = 10,
       noninitiationRatio = 1.5,
+      bufferRadius = 20,
+      bufferExtractionMethod = "all cells",
+      initiationLimitPercent = 10,
       k = 5,
       generateProbabilityRasters = FALSE,
       outputDir = "E:/NetmapData/Scottsburg"
