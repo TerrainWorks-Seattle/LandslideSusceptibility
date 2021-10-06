@@ -254,6 +254,29 @@ tool_exec <- function(in_params, out_params) {
     bufferRadius
   )
   
+  # Plot variable distributions ------------------------------------------------
+  
+  # Get requested values from all initiation and non-initiation buffers
+  allBuffersData <- extractBufferValues(
+    varsRaster,
+    initiationBuffers,
+    noninitiationBuffers,
+    bufferExtractionMethod
+  )
+  
+  # For each explanatory variable, draw a box plot of all the buffer values
+  for (varName in names(varsRaster)) {
+    varInitiationValues <- allBuffersData[allBuffersData$class == "initiation", varName]
+    varNoninitiationValues <- allBuffersData[allBuffersData$class == "non-initiation", varName]
+    
+    boxplot(
+      varInitiationValues, varNoninitiationValues,
+      main = paste0(varName, " distribution"),
+      names = c("Initiation", "Non-initiation"),
+      col = c("green", "red")
+    )
+  }
+  
   # Create initiation buffer sets ----------------------------------------------
   
   # Calculate how many testing initiation buffers there should be per iteration
