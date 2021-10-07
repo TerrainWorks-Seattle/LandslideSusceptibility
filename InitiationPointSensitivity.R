@@ -187,7 +187,7 @@ tool_exec <- function(in_params, out_params) {
   bufferRadius <- in_params[[5]]
   bufferExtractionMethod <- in_params[[6]]
   initiationLimitPercent <- in_params[[7]]
-  k <- in_params[[8]]
+  iterations <- in_params[[8]]
   testingProportion <- in_params[[9]]
   generateProbabilityRasters <- in_params[[10]]
   outputDir <- in_params[[11]]
@@ -206,7 +206,7 @@ tool_exec <- function(in_params, out_params) {
   }
   
   # Log input parameters
-  logMsg("Input parameters:\n")
+  logMsg("INPUT PARAMETERS:\n")
   logMsg(paste0("  Reference raster: ", referenceRasterFile, "\n"))
   logMsg("  Explanatory variable rasters:\n")
   for (i in seq_along(varRasterFiles)) { logMsg(paste0("    [", i, "] ", varRasterFiles[[i]], "\n")) }
@@ -215,7 +215,7 @@ tool_exec <- function(in_params, out_params) {
   logMsg(paste0("  Buffer radius: ", bufferRadius, "\n"))
   logMsg(paste0("  Buffer extraction method: ", bufferExtractionMethod, "\n"))
   logMsg(paste0("  Initiation limit percent: ", initiationLimitPercent, "%\n"))
-  logMsg(paste0("  k: ", k, "\n"))
+  logMsg(paste0("  Iterations: ", iterations, "\n"))
   logMsg(paste0("  Testing proportion: ", testingProportion, "\n"))
   logMsg(paste0("  Generate probability rasters: ", generateProbabilityRasters, "\n"))
   logMsg(paste0("  Output directory: ", outputDir, "\n\n"))
@@ -250,7 +250,16 @@ tool_exec <- function(in_params, out_params) {
   # Generate non-initiation buffers --------------------------------------------
   
   # Calculate initiation range for each variable
-  initiationRange <- createInitiationRange(varsRaster, initiationBuffers, initiationLimitPercent)
+  initiationRange <- createInitiationRange(
+    varsRaster,
+    initiationBuffers,
+    initiationLimitPercent
+  )
+  
+  # Log initiation range matrix
+  logMsg("INITIATION RANGES:\n")
+  logObj(initiationRange)
+  logMsg("\n")
   
   # The region where non-initiation buffers can be sampled from: regions that 
   # meet initiation conditions but recorded no landslides
@@ -312,16 +321,16 @@ tool_exec <- function(in_params, out_params) {
   
   # Place to store iteration model error rates
   iterationsErrorRates <- data.frame(
-    rep(NA, k),
-    rep(NA, k),
-    rep(NA, k)
+    rep(NA, iterations),
+    rep(NA, iterations),
+    rep(NA, iterations)
   )
   names(iterationsErrorRates) <- c("OOB", "initiation", "non-initiation")
   
   # Calculate how many initiation buffers should be used for testing per iteration
   testingInitiationBuffersCount <- floor(length(initiationBuffers) * testingProportion)
   
-  for (i in seq_len(k)) {
+  for (i in seq_len(iterations)) {
     ## Create initiation buffer sets -------------------------------------------
     
     # Create testing initiation set
@@ -349,10 +358,10 @@ tool_exec <- function(in_params, out_params) {
     )
     
     logMsg(paste0("Model ", formatC(i, width = 2, format = "d", flag = "0"), 
-                  " -------------------------------------------\n\n"))
+                  " ------------------------------------------------\n\n"))
     
     # Log model error rates
-    logMsg("ERROR RATES:\n")
+    logMsg("MODEL ERROR RATES:\n")
     errorRateDf <- data.frame(rfModel$err.rate[rfModel$ntree,])
     colnames(errorRateDf) <- "error rate"
     logObj(errorRateDf)
@@ -360,6 +369,7 @@ tool_exec <- function(in_params, out_params) {
     
     # Log model confusion matrix
     logMsg("MODEL CONFUSION MATRIX:\n")
+    rownames(rfModel$confusion) <- c("true initiation", "true non-initiation")
     logObj(rfModel$confusion)
     logMsg("\n")
     
@@ -374,15 +384,19 @@ tool_exec <- function(in_params, out_params) {
     )
     
     # Predict the class type of each test dataset entry
-    predictedClass <- predict(
+    prediction <- predict(
       rfModel,
       type = "response",
       newdata = testingData
     )
     
     # Log test dataset confusion matrix
-    logMsg("TESTING CONFUSION MATRIX:")
-    logObj(table(predictedClass, testingData$class))
+    logMsg("TESTING CONFUSION MATRIX:\n")
+    testConfusionMatrix <- table(prediction, testingData$class)
+    testConfusionMatrix <- data.frame(testConfusionMatrix[1,], testConfusionMatrix[2,])
+    colnames(testConfusionMatrix) <- c("initiation", "non-initiation")
+    rownames(testConfusionMatrix) <- c("true initiation", "true non-initiation")
+    logObj(testConfusionMatrix)
     logMsg("\n")
     
     # Calculate initiation probability for each test entry
@@ -402,7 +416,7 @@ tool_exec <- function(in_params, out_params) {
     
     # Log AUC value
     auc <- rocStats$auc@y.values[[1]]
-    logMsg(paste0("AUC: ", round(auc, digits = 7), "\n\n"))
+    logMsg(paste0("TESTING AUC: ", round(auc, digits = 7), "\n\n"))
     
     # Record iteration statistics
     iterationsAucValues <- c(iterationsAucValues, auc)
