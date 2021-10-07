@@ -151,11 +151,11 @@ tool_exec <- function(in_params, out_params) {
       initiationValues <- terra::extract(varsRaster, initiationCoords)
       noninitiationValues <- terra::extract(varsRaster, noninitiationCoords)
     } else if (bufferExtractionMethod == "max gradient cell") {
-      # Group by buffer
-      # Keep entry with the max grad value of each group
+      # Group by buffer and within each group, find the max gradient value
+      initiationValues <- merge(aggregate(grad_30 ~ ID, max, data = initiationValues), initiationValues) # TODO: Needs dynamic var name
     } else if (bufferExtractionMethod == "max plan cell") {
-      # Group by buffer
-      # Keep entry with the max plan value of each group
+      # Group by buffer and within each group, find the max plan value
+      initiationValues <- merge(aggregate(plan_30 ~ ID, max, data = initiationValues), initiationValues) # TODO: Needs dynamic var name
     }
     
     # Assign a classification value to each entry
@@ -523,7 +523,7 @@ if (FALSE) {
       initiationPointsFile = "E:/NetmapData/Scottsburg/Scottsburg_Upslope.shp",
       noninitiationRatio = 1.5,
       bufferRadius = 20,
-      bufferExtractionMethod = "center cell",
+      bufferExtractionMethod = "max gradient cell",
       initiationLimitPercent = 10,
       k = 20,
       testingProportion = 0.1,
