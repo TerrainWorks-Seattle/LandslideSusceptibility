@@ -188,8 +188,9 @@ tool_exec <- function(in_params, out_params) {
   bufferExtractionMethod <- in_params[[6]]
   initiationLimitPercent <- in_params[[7]]
   k <- in_params[[8]]
-  generateProbabilityRasters <- in_params[[9]]
-  outputDir <- in_params[[10]]
+  testingProportion <- in_params[[9]]
+  generateProbabilityRasters <- in_params[[10]]
+  outputDir <- in_params[[11]]
   
   # Set up logging -------------------------------------------------------------
   
@@ -208,13 +209,14 @@ tool_exec <- function(in_params, out_params) {
   logMsg("Input parameters:\n")
   logMsg(paste0("  Reference raster: ", referenceRasterFile, "\n"))
   logMsg("  Explanatory variable rasters:\n")
-  for (i in seq_along(varRasterFiles)) { logMsg(paste0("  [", i, "] ", varRasterFiles[[i]], "\n")) }
+  for (i in seq_along(varRasterFiles)) { logMsg(paste0("    [", i, "] ", varRasterFiles[[i]], "\n")) }
   logMsg(paste0("  Initiation points: ", initiationPointsFile, "\n"))
   logMsg(paste0("  Non-initiation points ratio: ", noninitiationRatio, "\n"))
   logMsg(paste0("  Buffer radius: ", bufferRadius, "\n"))
   logMsg(paste0("  Buffer extraction method: ", bufferExtractionMethod, "\n"))
   logMsg(paste0("  Initiation limit percent: ", initiationLimitPercent, "%\n"))
   logMsg(paste0("  k: ", k, "\n"))
+  logMsg(paste0("  Testing proportion: ", testingProportion, "\n"))
   logMsg(paste0("  Generate probability rasters: ", generateProbabilityRasters, "\n"))
   logMsg(paste0("  Output directory: ", outputDir, "\n\n"))
   
@@ -293,24 +295,10 @@ tool_exec <- function(in_params, out_params) {
     dev.off()
   }
   
-  # Create initiation buffer sets ----------------------------------------------
-  
-  # Calculate how many testing initiation buffers there should be per iteration
-  testingInitiationBuffersPerIteration <- floor(length(initiationBuffers) / k)
-  
-  # Create k sets of initiation buffers to use for training and testing
-  testingSets <- list()
-  testingFreeInitiationIndices <- seq_along(initiationBuffers)
-  for (i in 1:k) {
-    testingInitiationIndices <- sample(testingFreeInitiationIndices, size = testingInitiationBuffersPerIteration)
-    testingFreeInitiationIndices <- testingFreeInitiationIndices[!(testingFreeInitiationIndices %in% testingInitiationIndices)]
-    testingSets[[i]] <- testingInitiationIndices
-  }
-  
   # Create non-initiation buffer sets ------------------------------------------
   
   # Create a static set of training and testing non-initiation buffers to use every iteration
-  testingNoninitiationCount <- floor(testingInitiationBuffersPerIteration * noninitiationRatio)
+  testingNoninitiationCount <- floor(length(noninitiationBuffers) * testingProportion)
   testingNoninitiationIndices <- sample(seq_along(noninitiationBuffers), size = testingNoninitiationCount)
   trainingNoninitiationIndices <- setdiff(seq_along(noninitiationBuffers), testingNoninitiationIndices)
   
@@ -319,7 +307,7 @@ tool_exec <- function(in_params, out_params) {
   
   # Perform cross-validation ---------------------------------------------------
   
-  # Place to store iteration model auc values
+  # Place to store iteration model AUC values
   iterationsAucValues <- c()
   
   # Place to store iteration model error rates
@@ -330,14 +318,21 @@ tool_exec <- function(in_params, out_params) {
   )
   names(iterationsErrorRates) <- c("OOB", "initiation", "non-initiation")
   
-  for (i in seq_along(testingSets)) {
-    ## Create training data ----------------------------------------------------
+  # Calculate how many initiation buffers should be used for testing per iteration
+  testingInitiationBuffersCount <- floor(length(initiationBuffers) * testingProportion)
+  
+  for (i in seq_len(k)) {
+    ## Create initiation buffer sets -------------------------------------------
     
-    testingInitiationIndices <- testingSets[[i]]
+    # Create testing initiation set
+    testingInitiationIndices <- sample(seq_along(initiationBuffers), size = testingInitiationBuffersCount)
+    testingInitiationBuffers <- initiationBuffers[testingInitiationIndices]
     
-    # Get training initiation buffers
+    # Create training initiation set
     trainingInitiationIndices <- setdiff(seq_along(initiationBuffers), testingInitiationIndices)
     trainingInitiationBuffers <- initiationBuffers[trainingInitiationIndices]
+    
+    ## Create model ------------------------------------------------------------
     
     # Create training dataset
     trainingData <- extractBufferValues(
@@ -346,8 +341,6 @@ tool_exec <- function(in_params, out_params) {
       trainingNoninitiationBuffers,
       bufferExtractionMethod
     )
-    
-    ## Create model ------------------------------------------------------------
     
     # Train a new random forest model
     rfModel <- randomForest::randomForest(
@@ -370,25 +363,7 @@ tool_exec <- function(in_params, out_params) {
     logObj(rfModel$confusion)
     logMsg("\n")
     
-    ## Generate probability raster ---------------------------------------------
-    
-    if (generateProbabilityRasters) {
-      # Generate probability raster
-      initiationProbRaster <- terra::predict(
-        varsRaster,
-        rfModel,
-        na.rm = TRUE,
-        type = "prob"
-      )[["initiation"]]
-      
-      # Save raster
-      terra::writeRaster(initiationProbRaster, paste0(outputDir, "/prob_", i, ".tif"))
-    }
-    
     ## Run model on testing data -----------------------------------------------
-    
-    # Get testing initiation buffers
-    testingInitiationBuffers <- initiationBuffers[testingInitiationIndices]
     
     # Creating testing data
     testingData <- extractBufferValues(
@@ -432,6 +407,21 @@ tool_exec <- function(in_params, out_params) {
     # Record iteration statistics
     iterationsAucValues <- c(iterationsAucValues, auc)
     iterationsErrorRates[i,] <- as.data.frame(rfModel$err.rate)[rfModel$ntree,]
+    
+    ## Generate probability raster ---------------------------------------------
+    
+    if (generateProbabilityRasters) {
+      # Generate probability raster
+      initiationProbRaster <- terra::predict(
+        varsRaster,
+        rfModel,
+        na.rm = TRUE,
+        type = "prob"
+      )[["initiation"]]
+      
+      # Save raster
+      terra::writeRaster(initiationProbRaster, paste0(outputDir, "/prob_", i, ".tif"))
+    }
   }
   
   # Summarize iterations -------------------------------------------------------
@@ -501,6 +491,7 @@ if (FALSE) {
       bufferExtractionMethod = "all cells",
       initiationLimitPercent = 10,
       k = 5,
+      testingProportion = 0.1,
       generateProbabilityRasters = FALSE,
       outputDir = "C:/Work/netmapdata/Scottsburg"
     ),
@@ -520,7 +511,8 @@ if (FALSE) {
       bufferRadius = 20,
       bufferExtractionMethod = "center cell",
       initiationLimitPercent = 10,
-      k = 5,
+      k = 20,
+      testingProportion = 0.1,
       generateProbabilityRasters = FALSE,
       outputDir = "E:/NetmapData/Scottsburg"
     ),
