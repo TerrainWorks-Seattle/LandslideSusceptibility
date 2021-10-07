@@ -138,10 +138,22 @@ tool_exec <- function(in_params, out_params) {
     noninitiationValues <- terra::extract(varsRaster, noninitiationBuffers)
     
     # Subset if a different buffer extraction method was requested
-    if (bufferExtractionMethod == "steepest cell") {
+    if (bufferExtractionMethod == "center cell") {
+      # Find center points of buffers
+      initiationCenters <- terra::centroids(initiationBuffers)
+      noninitiationCenters <- terra::centroids(noninitiationBuffers)
+      
+      # Get center point coordinates
+      initiationCoords <- terra::geom(initiationCenters)[,c("x","y")]
+      noninitiationCoords <- terra::geom(noninitiationCenters)[,c("x","y")]
+      
+      # Extract values from cells containing center points
+      initiationValues <- terra::extract(varsRaster, initiationCoords)
+      noninitiationValues <- terra::extract(varsRaster, noninitiationCoords)
+    } else if (bufferExtractionMethod == "max gradient cell") {
       # Group by buffer
       # Keep entry with the max grad value of each group
-    } else if (bufferExtractionMethod == "most convergent cell") {
+    } else if (bufferExtractionMethod == "max plan cell") {
       # Group by buffer
       # Keep entry with the max plan value of each group
     }
@@ -506,7 +518,7 @@ if (FALSE) {
       initiationPointsFile = "E:/NetmapData/Scottsburg/Scottsburg_Upslope.shp",
       noninitiationRatio = 1.5,
       bufferRadius = 20,
-      bufferExtractionMethod = "all cells",
+      bufferExtractionMethod = "center cell",
       initiationLimitPercent = 10,
       k = 5,
       generateProbabilityRasters = FALSE,
