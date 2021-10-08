@@ -14,7 +14,7 @@ tool_exec <- function(in_params, out_params) {
   createInitiationRange <- function(
     varsRaster,            # A SpatRaster of explanatory variables
     initiationBuffers,     # A SpatVector of initiation buffers
-    initiationLimitPercent # Percent to reduce each range min and increase each range max by 
+    initiationRangeExpansion # Percent to reduce each range min and increase each range max by 
   ) {
     # Extract all variable values from initiation buffers
     initiationValues <- terra::extract(varsRaster, initiationBuffers)
@@ -29,7 +29,7 @@ tool_exec <- function(in_params, out_params) {
     initiationMaxValues <- lapply(regionMaxVarValues, max)
     
     # Slightly expand initiation range
-    initiationLimitRatio <- initiationLimitPercent / 100  
+    initiationLimitRatio <- initiationRangeExpansion / 100  
     initiationMinValues <- lapply(initiationMinValues, function(x) x - initiationLimitRatio * x)
     initiationMaxValues <- lapply(initiationMaxValues, function(x) x + initiationLimitRatio * x)
     
@@ -186,9 +186,9 @@ tool_exec <- function(in_params, out_params) {
   noninitiationRatio <- in_params[[4]]
   bufferRadius <- in_params[[5]]
   bufferExtractionMethod <- in_params[[6]]
-  initiationLimitPercent <- in_params[[7]]
+  initiationRangeExpansion <- in_params[[7]]
   iterations <- in_params[[8]]
-  testingProportion <- in_params[[9]]
+  testingProportionPercent <- in_params[[9]]
   generateProbabilityRasters <- in_params[[10]]
   outputDir <- in_params[[11]]
   
@@ -214,9 +214,9 @@ tool_exec <- function(in_params, out_params) {
   logMsg(paste0("  Non-initiation points ratio: ", noninitiationRatio, "\n"))
   logMsg(paste0("  Buffer radius: ", bufferRadius, "\n"))
   logMsg(paste0("  Buffer extraction method: ", bufferExtractionMethod, "\n"))
-  logMsg(paste0("  Initiation limit percent: ", initiationLimitPercent, "%\n"))
+  logMsg(paste0("  Initiation range expansion: ", initiationRangeExpansion, "%\n"))
   logMsg(paste0("  Iterations: ", iterations, "\n"))
-  logMsg(paste0("  Testing proportion: ", testingProportion, "\n"))
+  logMsg(paste0("  Testing proportion: ", testingProportionPercent, "%\n"))
   logMsg(paste0("  Generate probability rasters: ", generateProbabilityRasters, "\n"))
   logMsg(paste0("  Output directory: ", outputDir, "\n\n"))
   
@@ -253,7 +253,7 @@ tool_exec <- function(in_params, out_params) {
   initiationRange <- createInitiationRange(
     varsRaster,
     initiationBuffers,
-    initiationLimitPercent
+    initiationRangeExpansion
   )
   
   # Log initiation range matrix
@@ -307,7 +307,7 @@ tool_exec <- function(in_params, out_params) {
   # Create non-initiation buffer sets ------------------------------------------
   
   # Create a static set of training and testing non-initiation buffers to use every iteration
-  testingNoninitiationCount <- floor(length(noninitiationBuffers) * testingProportion)
+  testingNoninitiationCount <- floor(length(noninitiationBuffers) * (testingProportionPercent / 100))
   testingNoninitiationIndices <- sample(seq_along(noninitiationBuffers), size = testingNoninitiationCount)
   trainingNoninitiationIndices <- setdiff(seq_along(noninitiationBuffers), testingNoninitiationIndices)
   
@@ -328,7 +328,7 @@ tool_exec <- function(in_params, out_params) {
   names(iterationsErrorRates) <- c("OOB", "initiation", "non-initiation")
   
   # Calculate how many initiation buffers should be used for testing per iteration
-  testingInitiationBuffersCount <- floor(length(initiationBuffers) * testingProportion)
+  testingInitiationBuffersCount <- floor(length(initiationBuffers) * (testingProportionPercent / 100))
   
   for (i in seq_len(iterations)) {
     ## Create initiation buffer sets -------------------------------------------
@@ -502,10 +502,10 @@ if (FALSE) {
       initiationPointsFile = "C:/Work/netmapdata/Scottsburg/Scottsburg_Upslope.shp",
       noninitiationRatio = 1.5,
       bufferRadius = 20,
-      bufferExtractionMethod = "all cells",
-      initiationLimitPercent = 10,
+      bufferExtractionMethod = "center cell",
+      initiationRangeExtension = 10,
       k = 5,
-      testingProportion = 0.1,
+      testingProportionPercent = 10,
       generateProbabilityRasters = FALSE,
       outputDir = "C:/Work/netmapdata/Scottsburg"
     ),
@@ -524,9 +524,9 @@ if (FALSE) {
       noninitiationRatio = 1.5,
       bufferRadius = 20,
       bufferExtractionMethod = "max gradient cell",
-      initiationLimitPercent = 10,
+      initiationRangeExpansion = 10,
       k = 20,
-      testingProportion = 0.1,
+      testingProportionPercent = 10,
       generateProbabilityRasters = FALSE,
       outputDir = "E:/NetmapData/Scottsburg"
     ),
