@@ -151,24 +151,11 @@ tool_exec <- function(in_params, out_params) {
       initiationValues <- terra::extract(varsRaster, initiationCoords)
       noninitiationValues <- terra::extract(varsRaster, noninitiationCoords)
     } else if (bufferExtractionMethod == "max gradient cell") {
-      # The gradient variable name
-      gradientVarName <- names(varsRaster)[grepl("grad", names(varsRaster))][1]
-      
-      # Formula to group entries by buffer and return gradient value
-      fm <- as.formula(paste(gradientVarName, "~", "ID"))
-      
-      # For each initiation buffer, keep the entry with the max gradient value
-      initiationValues <- merge(
-        aggregate(fm, max, data = initiationValues),
-        initiationValues
-      )
-      
-      # For each non-initiation buffer, keep the entry with the max gradient value
-      noninitiationValues <- merge(
-        aggregate(fm, max, data = noninitiationValues),
-        noninitiationValues
-      )
+      initiationValues <- aggregateBufferValues(initiationValues, "grad", max)
+      noninitiationValues <- aggregateBufferValues(noninitiationValues, "grad", max)
     } else if (bufferExtractionMethod == "max plan cell") {
+      initiationValues <- aggregateBufferValues(initiationValues, "plan", max)
+      noninitiationValues <- aggregateBufferValues(noninitiationValues, "plan", max)
     }
     
     # Assign a classification value to each entry
@@ -188,6 +175,28 @@ tool_exec <- function(in_params, out_params) {
     dataset <- na.omit(dataset)
     
     return(dataset)
+  }
+  
+  # Groups values by buffer and, for each buffer, keeps the entry with the "fun"
+  # (min/max) variable value.
+  aggregateBufferValues <- function(
+    bufferValues, # Values extracted from buffers, including an "ID" column
+    varName,      # Name pattern of the variable to aggregate by
+    fun           # Function to aggregate buffer values by
+  ) {
+    # Determine which variable to aggregate by based on provided name pattern
+    gradientVarName <- names(varsRaster)[grepl("grad", names(varsRaster))][1]
+    
+    # Formula to group entries by buffer and return requested variable value
+    fm <- as.formula(paste(gradientVarName, "~", "ID"))
+    
+    # For each buffer, keep the entry with the "fun" variable value
+    aggregatedValues <- merge(
+      aggregate(fm, max, data = bufferValues),
+      bufferValues
+    )
+    
+    return(aggregatedValues)
   }
   
   # Set parameters -------------------------------------------------------------
