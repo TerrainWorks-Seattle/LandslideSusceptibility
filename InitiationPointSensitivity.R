@@ -151,11 +151,24 @@ tool_exec <- function(in_params, out_params) {
       initiationValues <- terra::extract(varsRaster, initiationCoords)
       noninitiationValues <- terra::extract(varsRaster, noninitiationCoords)
     } else if (bufferExtractionMethod == "max gradient cell") {
-      # Group by buffer and within each group, find the max gradient value
-      initiationValues <- merge(aggregate(grad_30 ~ ID, max, data = initiationValues), initiationValues) # TODO: Needs dynamic var name
+      # The gradient variable name
+      gradientVarName <- names(varsRaster)[grepl("grad", names(varsRaster))][1]
+      
+      # Formula to group entries by buffer and return gradient value
+      fm <- as.formula(paste(gradientVarName, "~", "ID"))
+      
+      # For each initiation buffer, keep the entry with the max gradient value
+      initiationValues <- merge(
+        aggregate(fm, max, data = initiationValues),
+        initiationValues
+      )
+      
+      # For each non-initiation buffer, keep the entry with the max gradient value
+      noninitiationValues <- merge(
+        aggregate(fm, max, data = noninitiationValues),
+        noninitiationValues
+      )
     } else if (bufferExtractionMethod == "max plan cell") {
-      # Group by buffer and within each group, find the max plan value
-      initiationValues <- merge(aggregate(plan_30 ~ ID, max, data = initiationValues), initiationValues) # TODO: Needs dynamic var name
     }
     
     # Assign a classification value to each entry
