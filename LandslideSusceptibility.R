@@ -2,10 +2,10 @@ tool_exec <- function(in_params, out_params) {
   
   # Load helper functions ------------------------------------------------------
   
-  source("./createInitiationRange.R")
-  source("./createNoninitiationRaster.R")
-  source("./generateNoninitiationBuffers.R")
-  source("./extractBufferValues.R")
+  source("./shared/createInitiationRange.R")
+  source("./shared/createNoninitiationRaster.R")
+  source("./shared/generateNoninitiationBuffers.R")
+  source("./shared/extractBufferValues.R")
   
   # Set parameters -------------------------------------------------------------
   
