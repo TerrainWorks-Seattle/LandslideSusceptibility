@@ -1,10 +1,3 @@
-# This script provides a way to assess how much the choice of initiation points
-# affects the accuracy of a landslide susceptibility prediction model.
-# k iterations of the model are created, each trained with a unique set of
-# initiation points and a static set of non-initiation points. A buffer of given
-# size is drawn around each point and all cell values within are used as model 
-# inputs.
-
 tool_exec <- function(in_params, out_params) {
   
   # Load helper functions ------------------------------------------------------
