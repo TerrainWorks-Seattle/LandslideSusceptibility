@@ -19,8 +19,7 @@ tool_exec <- function(in_params, out_params) {
   initiationRangeExpansion   <- in_params[[7]]
   iterations                 <- in_params[[8]]
   testingProportionPercent   <- in_params[[9]]
-  generateProbabilityRasters <- in_params[[10]]
-  outputDir                  <- in_params[[11]]
+  outputDir                  <- in_params[[10]]
   
   # Set up logging -------------------------------------------------------------
   
@@ -47,7 +46,6 @@ tool_exec <- function(in_params, out_params) {
   logMsg(paste0("  Initiation range expansion: ", initiationRangeExpansion, "%\n"))
   logMsg(paste0("  Iterations: ", iterations, "\n"))
   logMsg(paste0("  Testing proportion: ", testingProportionPercent, "%\n"))
-  logMsg(paste0("  Generate probability rasters: ", generateProbabilityRasters, "\n"))
   logMsg(paste0("  Output directory: ", outputDir, "\n"))
   logMsg("\n")
   
@@ -254,21 +252,6 @@ tool_exec <- function(in_params, out_params) {
     # Record iteration statistics
     iterationsAucValues <- c(iterationsAucValues, auc)
     iterationsErrorRates[i,] <- as.data.frame(rfModel$err.rate)[rfModel$ntree,]
-    
-    ## Generate probability raster ---------------------------------------------
-    
-    if (generateProbabilityRasters) {
-      # Generate probability raster
-      initiationProbRaster <- terra::predict(
-        varsRaster,
-        rfModel,
-        na.rm = TRUE,
-        type = "prob"
-      )[["initiation"]]
-      
-      # Save raster
-      terra::writeRaster(initiationProbRaster, paste0(outputDir, "/prob_", i, ".tif"))
-    }
   }
   
   # Summarize iterations -------------------------------------------------------
@@ -339,7 +322,6 @@ if (FALSE) {
       initiationRangeExtension = 10,
       k = 5,
       testingProportionPercent = 10,
-      generateProbabilityRasters = FALSE,
       outputDir = "C:/Work/netmapdata/Scottsburg"
     ),
     out_params = list()
@@ -360,7 +342,6 @@ if (FALSE) {
       initiationRangeExpansion = 10,
       k = 20,
       testingProportionPercent = 10,
-      generateProbabilityRasters = FALSE,
       outputDir = "E:/NetmapData/Scottsburg"
     ),
     out_params = list()
