@@ -6,14 +6,13 @@
 # inputs.
 
 tool_exec <- function(in_params, out_params) {
-  
   # Helper functions -----------------------------------------------------------
   
   # Creates a matrix that holds the min/max initiation limits of each 
   # explanatory variable.
   createInitiationRange <- function(
-    varsRaster,            # A SpatRaster of explanatory variables
-    initiationBuffers,     # A SpatVector of initiation buffers
+    varsRaster,              # A SpatRaster of explanatory variables
+    initiationBuffers,       # A SpatVector of initiation buffers
     initiationRangeExpansion # Percent to reduce each range min and increase each range max by 
   ) {
     # Extract all variable values from initiation buffers
@@ -29,9 +28,9 @@ tool_exec <- function(in_params, out_params) {
     initiationMaxValues <- lapply(regionMaxVarValues, max)
     
     # Slightly expand initiation range
-    initiationLimitRatio <- initiationRangeExpansion / 100  
-    initiationMinValues <- lapply(initiationMinValues, function(x) x - initiationLimitRatio * x)
-    initiationMaxValues <- lapply(initiationMaxValues, function(x) x + initiationLimitRatio * x)
+    r <- initiationRangeExpansion / 100  
+    initiationMinValues <- lapply(initiationMinValues, function(x) x - r * x)
+    initiationMaxValues <- lapply(initiationMaxValues, function(x) x + r * x)
     
     # Create a matrix that holds each variable's initiation range
     initiationRange <- matrix(rep(NA, 4), nrow = 2)
@@ -202,17 +201,17 @@ tool_exec <- function(in_params, out_params) {
   # Set parameters -------------------------------------------------------------
   
   # Input
-  referenceRasterFile <- in_params[[1]]
-  varRasterFiles <- in_params[[2]]
-  initiationPointsFile <- in_params[[3]]
-  noninitiationRatio <- in_params[[4]]
-  bufferRadius <- in_params[[5]]
-  bufferExtractionMethod <- in_params[[6]]
-  initiationRangeExpansion <- in_params[[7]]
-  iterations <- in_params[[8]]
-  testingProportionPercent <- in_params[[9]]
+  referenceRasterFile        <- in_params[[1]]
+  varRasterFiles             <- in_params[[2]]
+  initiationPointsFile       <- in_params[[3]]
+  noninitiationRatio         <- in_params[[4]]
+  bufferRadius               <- in_params[[5]]
+  bufferExtractionMethod     <- in_params[[6]]
+  initiationRangeExpansion   <- in_params[[7]]
+  iterations                 <- in_params[[8]]
+  testingProportionPercent   <- in_params[[9]]
   generateProbabilityRasters <- in_params[[10]]
-  outputDir <- in_params[[11]]
+  outputDir                  <- in_params[[11]]
   
   # Set up logging -------------------------------------------------------------
   
@@ -240,7 +239,8 @@ tool_exec <- function(in_params, out_params) {
   logMsg(paste0("  Iterations: ", iterations, "\n"))
   logMsg(paste0("  Testing proportion: ", testingProportionPercent, "%\n"))
   logMsg(paste0("  Generate probability rasters: ", generateProbabilityRasters, "\n"))
-  logMsg(paste0("  Output directory: ", outputDir, "\n\n"))
+  logMsg(paste0("  Output directory: ", outputDir, "\n"))
+  logMsg("\n")
   
   # Load rasters ---------------------------------------------------------------
   
@@ -438,7 +438,8 @@ tool_exec <- function(in_params, out_params) {
     
     # Log AUC value
     auc <- rocStats$auc@y.values[[1]]
-    logMsg(paste0("TESTING AUC: ", round(auc, digits = 7), "\n\n"))
+    logMsg(paste0("TESTING AUC: ", round(auc, digits = 7), "\n"))
+    logMsg("\n")
     
     # Record iteration statistics
     iterationsAucValues <- c(iterationsAucValues, auc)
