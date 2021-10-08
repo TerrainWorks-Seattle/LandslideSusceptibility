@@ -8,7 +8,7 @@
 #'               cannot be located
 #' @param radius The radius of each non-initiation buffer
 #' 
-#' @return 
+#' @return A SpatVector of non-initiation buffers.
 
 generateNoninitiationBuffers <- function(count, region, radius) {
   
