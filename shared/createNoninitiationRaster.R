@@ -1,35 +1,43 @@
-# Creates a raster with NA cells anywhere the input variable rasters don't
-# fall within their respective initiation ranges or are inside initiation
-# sites.
+#' @title Create non-initiation raster
+#'
+#' @description Creates a raster that defines where non-initiation points can be
+#' generated. This includes cells not already in initiation sites and whose 
+#' variable values are all within their respective initiation ranges.
+#'
+#' @param raster      A SpatRaster of explanatory variables
+#' @param initRange   A matrix that holds the min & max initiation limits 
+#'                    of each explanatory variable
+#' @param initBuffers A SpatVector of initiation buffers
+#' 
+#' @return A SpatRaster where any non-NA cell is a viable location for a 
+#' non-initiation point.
 
-createNoninitiationRaster <- function(
-  varsRaster,       # A SpatRaster of explanatory variables
-  initiationRange,  # A matrix that holds the min/max initiation limits of each explanatory variable 
-  initiationBuffers # A SpatVector of initiation buffers
-) {
-  initiationRaster <- terra::copy(varsRaster)
-  for (varName in names(initiationRaster)) {
-    varRaster <- initiationRaster[[varName]]
+createNoninitiationRaster <- function(raster, initRange, initBuffers) {
+  
+  initRaster <- terra::copy(raster)
+  for (varName in names(initRaster)) {
+    varRaster <- initRaster[[varName]]
     
     # Get variable value limits
-    minInitiationValue <- initiationRange[varName, "min"]
-    maxInitiationValue <- initiationRange[varName, "max"]
+    minInitValue <- initRange[varName, "min"]
+    maxInitValue <- initRange[varName, "max"]
     
     # NA-out cells with values outside variable initiation range
-    varInitiationRaster <- terra::app(varRaster, function(x) {
-      ifelse(x < minInitiationValue | x > maxInitiationValue, NA, x)
+    varInitRaster <- terra::app(varRaster, function(x) {
+      ifelse(x < minInitValue | x > maxInitValue, NA, x)
     })
     
     # Update the raster in the input raster stack
-    initiationRaster[[varName]] <- varInitiationRaster
+    initRaster[[varName]] <- varInitRaster
   }
   
-  # NA-out cells with variable values outside their initiation range
-  initiationRaster <- terra::app(initiationRaster, fun = "prod")
+  # NA-out cells with ANY variable value outside its initiation range
+  initRaster <- terra::app(initRaster, fun = "prod")
   
   # NA-out cells within initiation buffers
-  initiationCells <- terra::extract(initiationRaster, initiationBuffers, cells = TRUE)$cell
-  initiationRaster[initiationCells] <- NA
+  initCells <- terra::extract(initRaster, initBuffers, cells = TRUE)$cell
+  initRaster[initCells] <- NA
   
-  return(initiationRaster)
+  return(initRaster)
+  
 }

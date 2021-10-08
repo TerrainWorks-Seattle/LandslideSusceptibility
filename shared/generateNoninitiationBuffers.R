@@ -1,22 +1,29 @@
-# Generates a SpatVector of non-initiation buffers.
+#' @title Generate non-initiation buffers
+#' 
+#' @description Generates a SpatVector of non-initiation buffers in a given 
+#' area.
+#' 
+#' @param count  The number of non-initiation buffers to generate
+#' @param region A SpatRaster with NA cells anywhere a non-initiation buffer
+#'               cannot be located
+#' @param radius The radius of each non-initiation buffer
+#' 
+#' @return 
 
-generateNoninitiationBuffers <- function(
-  noninitiationBuffersCount, # The number of non-initiation buffers to generate
-  noninitiationRegion,       # A SpatRaster delineating where non-initiation buffers can be placed
-  bufferRadius               # The radius of each non-initiation buffer
-) {
+generateNoninitiationBuffers <- function(count, region, radius) {
+  
   # NOTE: terra::spatSample() sometimes generates less than the requested 
   # number of points if the sample raster has a lot of NAs. This is remedied 
   # by repeatedly requesting a larger and larger number of points until
   # enough have been generated, then subsetting those for the correct amount.
   
-  currentRequest <- noninitiationBuffersCount
+  currentRequest <- count
   hasGeneratedEnough <- FALSE
   
   while (!hasGeneratedEnough) {
     # Sample points anywhere that fits initiation conditions but recorded no landslides
-    noninitiationPoints <- terra::spatSample(
-      noninitiationRegion,
+    noninitPoints <- terra::spatSample(
+      region,
       size = currentRequest,
       na.rm = TRUE,
       as.points = TRUE,
@@ -24,9 +31,9 @@ generateNoninitiationBuffers <- function(
     )
     
     # Test if enough non-initiation points have been generated
-    if (length(noninitiationPoints) >= noninitiationBuffersCount) {
+    if (length(noninitPoints) >= count) {
       # If so, subset and exit loop
-      noninitiationPoints <- noninitiationPoints[seq_len(noninitiationBuffersCount)]
+      noninitPoints <- noninitPoints[seq_len(count)]
       hasGeneratedEnough <- TRUE
     } else {
       # If not, double the next request
@@ -35,11 +42,12 @@ generateNoninitiationBuffers <- function(
   }
   
   # Create a buffer around each non-initiation point
-  noninitiationBuffers <- if (bufferRadius > 0) {
-    terra::buffer(noninitiationPoints, width = bufferRadius)
+  noninitBuffers <- if (radius > 0) {
+    terra::buffer(noninitPoints, width = radius)
   } else {
-    noninitiationPoints
+    noninitPoints
   }
   
-  return(noninitiationBuffers)
+  return(noninitBuffers)
+  
 }

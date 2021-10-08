@@ -1,46 +1,62 @@
-# Create a dataset containing variable values and classes of cells within 
-# initiation and non-initiation buffers.
+#' @title Extract buffer values
+#' 
+#' @description Extracts variable raster values within initiation and 
+#' non-initiation buffers.
+#' 
+#' @param raster           A SpatRaster of explanatory variables
+#' @param initBuffers      A SpatVector of initiation buffers
+#' @param noninitBuffers   A SpatVector of non-initiation buffers
+#' @param extractionMethod Method to use for extracting values from each buffer:
+#'                         "all cells", "center cell", "max gradient cell", or 
+#'                         "max plan cell"
+#' 
+#' @return A dataframe of extracted raster values with an additional "class" 
+#' column.
 
-extractBufferValues <- function(
-  varsRaster,            # A SpatRaster of explanatory variables
-  initiationBuffers,     # A SpatVector of initiation buffers
-  noninitiationBuffers,  # A SpatVector of non-initiation buffers,
-  bufferExtractionMethod # Method to use for extracting buffer values 
-) {
+extractBufferValues <- function(raster, initBuffers, noninitBuffers, extractionMethod) {
+  
   # By default, extract all values from initiation and non-initiation buffers
-  initiationValues <- terra::extract(varsRaster, initiationBuffers)
-  noninitiationValues <- terra::extract(varsRaster, noninitiationBuffers)
+  initValues <- terra::extract(raster, initBuffers)
+  noninitValues <- terra::extract(raster, noninitBuffers)
   
   # Subset if a different buffer extraction method was requested
-  if (bufferExtractionMethod == "center cell") {
+  if (extractionMethod == "center cell") {
+    
     # Find center points of buffers
-    initiationCenters <- terra::centroids(initiationBuffers)
-    noninitiationCenters <- terra::centroids(noninitiationBuffers)
+    initCenters <- terra::centroids(initBuffers)
+    noninitCenters <- terra::centroids(noninitBuffers)
     
     # Get center point coordinates
-    initiationCoords <- terra::geom(initiationCenters)[,c("x","y")]
-    noninitiationCoords <- terra::geom(noninitiationCenters)[,c("x","y")]
+    initCoords <- terra::geom(initCenters)[,c("x","y")]
+    noninitCoords <- terra::geom(noninitCenters)[,c("x","y")]
     
     # Extract values from cells containing center points
-    initiationValues <- terra::extract(varsRaster, initiationCoords)
-    noninitiationValues <- terra::extract(varsRaster, noninitiationCoords)
-  } else if (bufferExtractionMethod == "max gradient cell") {
-    initiationValues <- aggregateBufferValues(initiationValues, "grad", max)
-    noninitiationValues <- aggregateBufferValues(noninitiationValues, "grad", max)
-  } else if (bufferExtractionMethod == "max plan cell") {
-    initiationValues <- aggregateBufferValues(initiationValues, "plan", max)
-    noninitiationValues <- aggregateBufferValues(noninitiationValues, "plan", max)
+    initValues <- terra::extract(raster, initCoords)
+    noninitValues <- terra::extract(raster, noninitCoords)
+    
+  } else if (extractionMethod == "max gradient cell") {
+    
+    initValues <- aggregateBufferValues(initValues, "grad", max)
+    noninitValues <- aggregateBufferValues(noninitValues, "grad", max)
+    
+  } else if (extractionMethod == "max plan cell") {
+    
+    initValues <- aggregateBufferValues(initValues, "plan", max)
+    noninitValues <- aggregateBufferValues(noninitValues, "plan", max)
+    
   }
   
   # Assign a classification value to each entry
-  initiationValues$class <- rep("initiation", nrow(initiationValues))
-  noninitiationValues$class <- rep("non-initiation", nrow(noninitiationValues))
+  initValues$class <- rep("initiation", nrow(initValues))
+  noninitValues$class <- rep("non-initiation", nrow(noninitValues))
   
   # Combine initiation and non-initiation entries into a single dataset
-  dataset <- rbind(initiationValues, noninitiationValues)
+  dataset <- rbind(initValues, noninitValues)
   
   # Remove the "ID" column
   dataset$ID <- NULL
+  
+  # TODO: Remove cells that fall within initiation AND non-initiation buffers
   
   # Factor the classification variable values
   dataset$class <- factor(dataset$class)
@@ -49,27 +65,35 @@ extractBufferValues <- function(
   dataset <- na.omit(dataset)
   
   return(dataset)
+  
 }
 
-# Groups values by buffer and--for each buffer--keeps the entry with the "fun"
-# (min/max) variable value.
 
-aggregateBufferValues <- function(
-  bufferValues, # Values extracted from buffers, including an "ID" column
-  varName,      # Name pattern of the variable to aggregate by
-  fun           # Function to aggregate buffer values by
-) {
+#' @title Aggregate buffer values
+#' 
+#' @description Groups values by buffer and--for each buffer--keeps the entry 
+#' with the "fun" (min/max) variable value.
+#' 
+#' @param values  Values extracted from buffers, including an "ID" column
+#' @param varName Name pattern of the variable to aggregate by
+#' @param fun     A function to aggregate buffer values by: max, min
+#' 
+#' @return A dataframe of buffer values.
+
+aggregateBufferValues <- function(values, varName, fun) {
+  
   # Determine which variable to aggregate by based on provided name pattern
-  gradientVarName <- names(bufferValues)[grepl("grad", names(bufferValues))][1]
+  valuesVarName <- names(values)[grepl(varName, names(values))][1]
   
   # Formula to group entries by buffer and return requested variable value
-  fm <- as.formula(paste(gradientVarName, "~", "ID"))
+  fm <- as.formula(paste(valuesVarName, "~", "ID"))
   
   # For each buffer, keep the entry with the "fun" variable value
   aggregatedValues <- merge(
-    aggregate(fm, max, data = bufferValues),
-    bufferValues
+    aggregate(fm, max, data = values),
+    values
   )
   
   return(aggregatedValues)
+  
 }
