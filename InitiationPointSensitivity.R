@@ -1,4 +1,59 @@
-tool_exec <- function(in_params, out_params) {
+#' @title Assess the sensitivity of landslide susceptibility models to the 
+#' choice of initiation sites
+#'
+#' @description 
+#'
+#' @param refRasterFile          File of a raster to use as a grid reference 
+#' @param varsRasterFile         List of raster files to use as explanatory 
+#'                               variables
+#' @param initPointsFile         File of initiation points
+#' @param noninitRatio           The ratio of non-initiation sites to initiation
+#'                               sites
+#' @param bufferRadius           The radius of site buffers
+#' @param bufferExtractionMethod The method to select values from site buffers. 
+#'                               Either: "all cells", "center cell", "max 
+#'                               gradient cell", or "max plan cell"
+#' @param initRangeExpansion     The relative proportion (in %) to expand each 
+#'                               variable initiation range by
+#' @param iterations             How many models to create (trained on different
+#'                               sets of non-initiation sites)
+#' @param testingProportion      The proportion (in %) of initiation and
+#'                               non-initiation sites to withhold for testing
+#' @param outputDir              The directory to write output files to
+#' 
+#' @return 
+#' 
+#' @example
+#' \donttest{
+#' assessInitiationPointSusceptibility(
+#'   refRasterFile = "E:/NetmapData/Scottsburg/elev_scottsburg.flt",
+#'   varRasterFiles = list(
+#'     "E:/NetmapData/Scottsburg/grad_30.tif",
+#'     "E:/NetmapData/Scottsburg/plan_30.tif"
+#'   ),
+#'   initPointsFile = "E:/NetmapData/Scottsburg/Scottsburg_Upslope.shp",
+#'   noninitRatio = 1.5,
+#'   bufferRadius = 20,
+#'   bufferExtractionMethod = "max gradient cell",
+#'   initRangeExpansion = 10,
+#'   iterations = 20,
+#'   testingProportion = 10,
+#'   outputDir = "E:/NetmapData/Scottsburg"
+#' )
+#' }
+
+assessInitiationPointSusceptibility <- function(
+  refRasterFile,
+  varRasterFiles,
+  initPointsFile,
+  noninitRatio,
+  bufferRadius,
+  bufferExtractionMethod,
+  initRangeExpansion,
+  iterations,
+  testingProportion,
+  outputDir
+) {
   
   # Load helper functions ------------------------------------------------------
   
@@ -8,18 +63,6 @@ tool_exec <- function(in_params, out_params) {
   source("./shared/extractBufferValues.R")
   
   # Set parameters -------------------------------------------------------------
-  
-  # Input
-  referenceRasterFile        <- in_params[[1]]
-  varRasterFiles             <- in_params[[2]]
-  initiationPointsFile       <- in_params[[3]]
-  noninitiationRatio         <- in_params[[4]]
-  bufferRadius               <- in_params[[5]]
-  bufferExtractionMethod     <- in_params[[6]]
-  initiationRangeExpansion   <- in_params[[7]]
-  iterations                 <- in_params[[8]]
-  testingProportionPercent   <- in_params[[9]]
-  outputDir                  <- in_params[[10]]
   
   # Set up logging -------------------------------------------------------------
   
@@ -36,29 +79,29 @@ tool_exec <- function(in_params, out_params) {
   
   # Log input parameters
   logMsg("INPUT PARAMETERS:\n")
-  logMsg(paste0("  Reference raster: ", referenceRasterFile, "\n"))
+  logMsg(paste0("  Reference raster: ", refRasterFile, "\n"))
   logMsg("  Explanatory variable rasters:\n")
   for (i in seq_along(varRasterFiles)) { logMsg(paste0("    [", i, "] ", varRasterFiles[[i]], "\n")) }
-  logMsg(paste0("  Initiation points: ", initiationPointsFile, "\n"))
-  logMsg(paste0("  Non-initiation points ratio: ", noninitiationRatio, "\n"))
+  logMsg(paste0("  Initiation points: ", initPointsFile, "\n"))
+  logMsg(paste0("  Non-initiation points ratio: ", noninitRatio, "\n"))
   logMsg(paste0("  Buffer radius: ", bufferRadius, "\n"))
   logMsg(paste0("  Buffer extraction method: ", bufferExtractionMethod, "\n"))
-  logMsg(paste0("  Initiation range expansion: ", initiationRangeExpansion, "%\n"))
+  logMsg(paste0("  Initiation range expansion: ", initRangeExpansion, "%\n"))
   logMsg(paste0("  Iterations: ", iterations, "\n"))
-  logMsg(paste0("  Testing proportion: ", testingProportionPercent, "%\n"))
+  logMsg(paste0("  Testing proportion: ", testingProportion, "%\n"))
   logMsg(paste0("  Output directory: ", outputDir, "\n"))
   logMsg("\n")
   
   # Load rasters ---------------------------------------------------------------
   
   # Load reference raster
-  referenceRaster <- terra::rast(referenceRasterFile)
+  refRaster <- terra::rast(refRasterFile)
   
   # Load explanatory variable rasters
   varRasterList <- lapply(varRasterFiles, function(file) terra::rast(file))
   
   # Align variable rasters
-  varRasterList <- TerrainWorksUtils::alignRasters(referenceRaster, varRasterList)
+  varRasterList <- TerrainWorksUtils::alignRasters(refRaster, varRasterList)
   
   # Combine variable rasters into a single multi-layer raster
   varsRaster <- terra::rast(varRasterList)
@@ -66,44 +109,44 @@ tool_exec <- function(in_params, out_params) {
   # Create initiation buffers --------------------------------------------------
   
   # Load initiation points
-  initiationPoints <- terra::vect(initiationPointsFile)
-  initiationPoints <- terra::project(initiationPoints, referenceRaster)
+  initPoints <- terra::vect(initPointsFile)
+  initPoints <- terra::project(initPoints, refRaster)
   
   # Create a buffer around each initiation point
-  initiationBuffers <- if (bufferRadius > 0) {
-    terra::buffer(initiationPoints, width = bufferRadius)
+  initBuffers <- if (bufferRadius > 0) {
+    terra::buffer(initPoints, width = bufferRadius)
   } else {
-    initiationPoints
+    initPoints
   }
   
   # Generate non-initiation buffers --------------------------------------------
   
   # Calculate initiation range for each variable
-  initiationRange <- createInitiationRange(
+  initRange <- createInitiationRange(
     varsRaster,
-    initiationBuffers,
-    initiationRangeExpansion
+    initBuffers,
+    initRangeExpansion
   )
   
   # Log initiation range matrix
   logMsg("INITIATION RANGES:\n")
-  logObj(initiationRange)
+  logObj(initRange)
   logMsg("\n")
   
   # The region where non-initiation buffers can be sampled from: regions that 
   # meet initiation conditions but recorded no landslides
-  noninitiationRaster <- createNoninitiationRaster(
+  noninitRaster <- createNoninitiationRaster(
     varsRaster,
-    initiationRange,
-    initiationBuffers
+    initRange,
+    initBuffers
   )
   
   # Generate non-initiation buffers
-  noninitiationBuffersCount <- ceiling(length(initiationPoints) * noninitiationRatio)
+  noninitBuffersCount <- ceiling(length(initPoints) * noninitRatio)
   
-  noninitiationBuffers <- generateNoninitiationBuffers(
-    noninitiationBuffersCount,
-    noninitiationRaster,
+  noninitBuffers <- generateNoninitiationBuffers(
+    noninitBuffersCount,
+    noninitRaster,
     bufferRadius
   )
   
@@ -112,20 +155,20 @@ tool_exec <- function(in_params, out_params) {
   # Get requested values from all initiation and non-initiation buffers
   allBuffersData <- extractBufferValues(
     varsRaster,
-    initiationBuffers,
-    noninitiationBuffers,
+    initBuffers,
+    noninitBuffers,
     bufferExtractionMethod
   )
   
   # For each explanatory variable, draw a box plot of all the buffer values
   for (varName in names(varsRaster)) {
-    varInitiationValues <- allBuffersData[allBuffersData$class == "initiation", varName]
-    varNoninitiationValues <- allBuffersData[allBuffersData$class == "non-initiation", varName]
+    varInitValues <- allBuffersData[allBuffersData$class == "initiation", varName]
+    varNoninitValues <- allBuffersData[allBuffersData$class == "non-initiation", varName]
     
     # Save plot as an image file
     dev.new()
     boxplot(
-      varInitiationValues, varNoninitiationValues,
+      varInitValues, varNoninitValues,
       main = paste0(varName, " distribution"),
       names = c("Initiation", "Non-initiation"),
       col = c("green", "red")
@@ -137,12 +180,12 @@ tool_exec <- function(in_params, out_params) {
   # Create non-initiation buffer sets ------------------------------------------
   
   # Create a static set of training and testing non-initiation buffers to use every iteration
-  testingNoninitiationCount <- floor(length(noninitiationBuffers) * (testingProportionPercent / 100))
-  testingNoninitiationIndices <- sample(seq_along(noninitiationBuffers), size = testingNoninitiationCount)
-  trainingNoninitiationIndices <- setdiff(seq_along(noninitiationBuffers), testingNoninitiationIndices)
+  testingNoninitCount <- floor(length(noninitBuffers) * (testingProportion / 100))
+  testingNoninitIndices <- sample(seq_along(noninitBuffers), size = testingNoninitCount)
+  trainingNoninitIndices <- setdiff(seq_along(noninitBuffers), testingNoninitIndices)
   
-  trainingNoninitiationBuffers <- noninitiationBuffers[trainingNoninitiationIndices]
-  testingNoninitiationBuffers <- noninitiationBuffers[testingNoninitiationIndices]
+  trainingNoninitBuffers <- noninitBuffers[trainingNoninitIndices]
+  testingNoninitBuffers <- noninitBuffers[testingNoninitIndices]
   
   # Perform cross-validation ---------------------------------------------------
   
@@ -158,26 +201,26 @@ tool_exec <- function(in_params, out_params) {
   names(iterationsErrorRates) <- c("OOB", "initiation", "non-initiation")
   
   # Calculate how many initiation buffers should be used for testing per iteration
-  testingInitiationBuffersCount <- floor(length(initiationBuffers) * (testingProportionPercent / 100))
+  testingInitBuffersCount <- floor(length(initBuffers) * (testingProportion / 100))
   
   for (i in seq_len(iterations)) {
     ## Create initiation buffer sets -------------------------------------------
     
     # Create testing initiation set
-    testingInitiationIndices <- sample(seq_along(initiationBuffers), size = testingInitiationBuffersCount)
-    testingInitiationBuffers <- initiationBuffers[testingInitiationIndices]
+    testingInitIndices <- sample(seq_along(initBuffers), size = testingInitBuffersCount)
+    testingInitBuffers <- initBuffers[testingInitIndices]
     
     # Create training initiation set
-    trainingInitiationIndices <- setdiff(seq_along(initiationBuffers), testingInitiationIndices)
-    trainingInitiationBuffers <- initiationBuffers[trainingInitiationIndices]
+    trainingInitIndices <- setdiff(seq_along(initBuffers), testingInitIndices)
+    trainingInitBuffers <- initBuffers[trainingInitIndices]
     
     ## Create model ------------------------------------------------------------
     
     # Create training dataset
     trainingData <- extractBufferValues(
       varsRaster,
-      trainingInitiationBuffers,
-      trainingNoninitiationBuffers,
+      trainingInitBuffers,
+      trainingNoninitBuffers,
       bufferExtractionMethod
     )
     
@@ -208,8 +251,8 @@ tool_exec <- function(in_params, out_params) {
     # Creating testing data
     testingData <- extractBufferValues(
       varsRaster,
-      testingInitiationBuffers,
-      testingNoninitiationBuffers,
+      testingInitBuffers,
+      testingNoninitBuffers,
       bufferExtractionMethod
     )
     
@@ -230,7 +273,7 @@ tool_exec <- function(in_params, out_params) {
     logMsg("\n")
     
     # Calculate initiation probability for each test entry
-    initiationProb <- predict(
+    initProb <- predict(
       rfModel,
       type = "prob",
       newdata = testingData
@@ -239,7 +282,7 @@ tool_exec <- function(in_params, out_params) {
     # Calculate ROC stats
     rocStats <- TerrainWorksUtils::calcRocStats(
       classes = testingData$class,
-      probs = initiationProb,
+      probs = initProb,
       "initiation",
       "non-initiation"
     )
@@ -298,54 +341,25 @@ tool_exec <- function(in_params, out_params) {
   logMsg("ERROR RATES:\n")
   logObj(errorRateMatrix)
   
-  # Return ---------------------------------------------------------------------
+}
+
+# ArcGIS script tool entrypoint
+tool_exec <- function(in_params, out_params) {
+  
+  assessInitiationPointSusceptibility(
+    refRasterFile          = in_params[[1]],
+    varRasterFiles         = in_params[[2]],
+    initPointsFile         = in_params[[3]],
+    noninitRatio           = in_params[[4]],
+    bufferRadius           = in_params[[5]],
+    bufferExtractionMethod = in_params[[6]],
+    initRangeExpansion     = in_params[[7]],
+    iterations             = in_params[[8]],
+    testingProportion      = in_params[[9]],
+    outputDir              = in_params[[10]]
+  )
   
   return(out_params)
   
 }
-
-
-if (FALSE) {
-  
-  # Run in Scottsburg (BIGLAPTOP)
-  tool_exec(
-    in_params = list(
-      referenceRasterFile = "C:/Work/netmapdata/Scottsburg/elev_scottsburg.flt",
-      varRasterFiles = list(
-        "C:/Work/netmapdata/Scottsburg/grad_30.tif",
-        "C:/Work/netmapdata/Scottsburg/plan_30.tif"
-      ),
-      initiationPointsFile = "C:/Work/netmapdata/Scottsburg/Scottsburg_Upslope.shp",
-      noninitiationRatio = 1.5,
-      bufferRadius = 20,
-      bufferExtractionMethod = "center cell",
-      initiationRangeExtension = 10,
-      k = 5,
-      testingProportionPercent = 10,
-      outputDir = "C:/Work/netmapdata/Scottsburg"
-    ),
-    out_params = list()
-  )
-  
-  # Run in Scottsburg (DESKTOP2)
-  tool_exec(
-    in_params = list(
-      referenceRasterFile = "E:/NetmapData/Scottsburg/elev_scottsburg.flt",
-      varRasterFiles = list(
-        "E:/NetmapData/Scottsburg/grad_30.tif",
-        "E:/NetmapData/Scottsburg/plan_30.tif"
-      ),
-      initiationPointsFile = "E:/NetmapData/Scottsburg/Scottsburg_Upslope.shp",
-      noninitiationRatio = 1.5,
-      bufferRadius = 20,
-      bufferExtractionMethod = "max gradient cell",
-      initiationRangeExpansion = 10,
-      k = 20,
-      testingProportionPercent = 10,
-      outputDir = "E:/NetmapData/Scottsburg"
-    ),
-    out_params = list()
-  )
-  
- }
  
