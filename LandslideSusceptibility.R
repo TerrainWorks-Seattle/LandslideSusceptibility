@@ -33,7 +33,7 @@
 #'   noninitRatio = 1.5,
 #'   bufferRadius = 20,
 #'   bufferExtractionMethod = "center cell",
-#'   initRangeExpansion = 10,
+#'   initRangeExpansion = 50,
 #'   iterations = 2,
 #'   outputDir = "E:/NetmapData/Scottsburg"
 #' )
@@ -138,7 +138,7 @@ predictLandslideSusceptibility <- function(
   
   # The region where non-initiation buffers can be sampled from: regions that 
   # meet initiation conditions but recorded no landslides
-  noninitRasters <- createNoninitiationRaster(
+  noninitRaster <- createNoninitiationRaster(
     varsRaster,
     initRange,
     initBuffers
@@ -158,7 +158,7 @@ predictLandslideSusceptibility <- function(
     # Generate non-initiation buffers
     noninitBuffers <- generateNoninitiationBuffers(
       noninitBuffersCount,
-      noninitRasters,
+      noninitRaster,
       bufferRadius
     )
     
