@@ -64,7 +64,41 @@ predictLandslideSusceptibility <- function(
   
   # Validate parameters --------------------------------------------------------
   
-  # TODO: validate parameters
+  # Validate reference raster file
+  if (!file.exists(refRasterFile))
+    stop(paste0("Reference raster file not found: '", refRasterFile, "'."))
+  
+  # Validate variable raster files
+  lapply(varRasterFiles, function(file) {
+    if (!file.exists(file))
+      stop(paste0("Variable raster file not found: '", file, "'."))
+  })
+  
+  # Validate initiation points file
+  if (!file.exists(initPointsFile))
+    stop(paste0("Initiation points file not found: '", initPointsFile, "'."))
+  
+  # Validate non-initiation ratio
+  if (noninitRatio <= 0)
+    stop("Non-initiation points ratio cannot be <=0.")
+  
+  # Validate buffer radius
+  if (bufferRadius < 0)
+    stop("Buffer radius cannot be negative.")
+  
+  # Validate buffer extraction method
+  if (!(bufferExtractionMethod %in% c("all cells", "center cell", "max gradient 
+        cell", "max plan cell")))
+    stop("Buffer extraction method must be one of 'all cells', 'center cell', 
+         'max gradient cell', or 'max plan cell'.")
+
+  # Validate number of iterations
+  if (iterations < 1)
+    stop("Iterations cannot be fewer than 1.")
+  
+  # Validate output directory
+  if (!file.exists(outputDir))
+    stop("Output directory not found: '", outputDir, "'.")
   
   # Set up logging -------------------------------------------------------------
   
