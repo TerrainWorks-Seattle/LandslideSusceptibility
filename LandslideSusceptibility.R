@@ -1,8 +1,8 @@
 #' @title Predict landslide susceptibility
 #'
 #' @description Creates a landslide susceptibility raster using a random forest
-#' model trained on initiation sites and topographic variable rasters. Cell 
-#' values represent the area's 0.0-1.0 prediction score of matching landslide
+#' model trained on initiation sites and topographic variable rasters. The value
+#' of each cell represents its 0.0-1.0 prediction score of matching landslide
 #' initiation conditions.
 #'
 #' @param refRasterFile          File of a raster to use as a grid reference 
@@ -20,8 +20,6 @@
 #' @param iterations             How many models to create (trained on different
 #'                               sets of non-initiation sites)
 #' @param outputDir              The directory to write output files to
-#' 
-#' @return A SpatRaster of landlside susceptibility prediction values.
 #' 
 #' @example
 #' \donttest{

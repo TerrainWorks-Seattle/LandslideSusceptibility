@@ -1,7 +1,9 @@
 #' @title Assess the sensitivity of landslide susceptibility models to the 
 #' choice of initiation sites
 #'
-#' @description 
+#' @description Creates a series of landslide susceptibility models trained on 
+#' random subsets of initiation sites. Outputs a distribution plot of site 
+#' values for each variable and a log file that records model accuracy. 
 #'
 #' @param refRasterFile          File of a raster to use as a grid reference 
 #' @param varsRasterFile         List of raster files to use as explanatory 
@@ -15,13 +17,10 @@
 #'                               gradient cell", or "max plan cell"
 #' @param initRangeExpansion     The relative proportion (in %) to expand each 
 #'                               variable initiation range by
-#' @param iterations             How many models to create (trained on different
-#'                               sets of non-initiation sites)
+#' @param iterations             How many models to create
 #' @param testingProportion      The proportion (in %) of initiation and
 #'                               non-initiation sites to withhold for testing
 #' @param outputDir              The directory to write output files to
-#' 
-#' @return 
 #' 
 #' @example
 #' \donttest{
