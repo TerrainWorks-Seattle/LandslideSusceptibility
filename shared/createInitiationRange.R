@@ -29,7 +29,8 @@ createInitiationRange <- function(raster, initBuffers, expansion) {
   initiationMaxValues <- lapply(initiationMaxValues, function(x) x + (expansion / 100) * x)
   
   # Create a matrix that holds each variable's initiation range
-  initiationRange <- matrix(rep(NA, 4), nrow = 2)
+  varCount <- terra::nlyr(raster)
+  initiationRange <- matrix(rep(NA, varCount * 2), nrow = varCount)
   colnames(initiationRange) <- c("min", "max")
   rownames(initiationRange) <- names(raster)
   for (varName in names(raster)) {
