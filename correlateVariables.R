@@ -1,5 +1,5 @@
 source("./shared/createInitiationRange.R")
-source("./shared/createNoninitiationRaster.R")
+source("./shared/createAnalysisRegionMask.R")
 source("./shared/generateNoninitiationBuffers.R")
 source("./shared/extractBufferValues.R")
 
@@ -51,21 +51,34 @@ initRange <- createInitiationRange(
   initRangeExpansion
 )
 
-
-# The region where non-initiation buffers can be sampled from: regions that 
-# meet initiation conditions but recorded no landslides
-noninitRaster <- createNoninitiationRaster(
+# Identify cells in the study region that have variable values within their 
+# initiation ranges
+analysisRegionMask <- createAnalysisRegionMask(
   varsRaster,
-  initRange,
-  initBuffers
+  initRange
 )
 
-# Generate non-initiation buffers
+# Define the region where non-initiation points can be generated
+
+# NOTE: initiation buffers and non-initiation buffers must not overlap. This can
+# be avoided by making sure each non-initiation point is generated at least 2 
+# buffer-radius-lengths away from any initiation point 
+
+# Double the size of the initiation buffers
+expInitBuffers <- terra::buffer(initPoints, width = bufferRadius * 2)
+
+# Remove expanded initiation buffers from the viable non-initiation region
+noninitRegion <- terra::copy(analysisRegionMask)
+initCellIndices <- terra::extract(noninitRegion, expInitBuffers, cells = TRUE)$cell
+noninitRegion[initCellIndices] <- NA
+
+# Determine how many non-initiation buffers to generate
 noninitBuffersCount <- ceiling(length(initPoints) * noninitRatio)
 
+# Generate non-initiation buffers
 noninitBuffers <- generateNoninitiationBuffers(
   noninitBuffersCount,
-  noninitRaster,
+  noninitRegion,
   bufferRadius
 )
 
