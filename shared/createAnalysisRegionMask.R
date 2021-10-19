@@ -30,7 +30,7 @@ createAnalysisRegionMask <- function(raster, initRange) {
   }
   
   # NA-out cells with ANY variable value outside its initiation range
-  analysisRegionMask <- terra::app(initRaster, fun = "prod")
+  analysisRegionMask <- terra::app(initRaster, fun = "all")
   
   return(analysisRegionMask)
   
