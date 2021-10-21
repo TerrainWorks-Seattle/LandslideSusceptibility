@@ -368,14 +368,15 @@ assessInitiationPointSusceptibility <- function(
   logMsg("SUMMARY --------------------------------------------\n\n")
   
   # Calculate AUC summary stats
-  aucMin <- min(iterationsAucValues)
-  aucMax <- max(iterationsAucValues)
+  aucMin <- min(iterationsAucValues, na.rm = TRUE)
+  aucMax <- max(iterationsAucValues, na.rm = TRUE)
+  aucAvg <- mean(iterationsAucValues, na.rm = TRUE)
   aucRange <- diff(c(aucMin, aucMax))
-  aucStdev <- sd(iterationsAucValues)
+  aucStdev <- sd(iterationsAucValues, na.rm = TRUE)
   
-  aucMatrix <- matrix(c(aucMin, aucMax, aucRange, aucStdev), ncol = 1)
+  aucMatrix <- matrix(c(aucMin, aucMax, aucAvg, aucRange, aucStdev), ncol = 1)
   aucMatrix <- t(aucMatrix)
-  colnames(aucMatrix) <- c("min", "max", "range", "stdev")
+  colnames(aucMatrix) <- c("min", "max", "avg", "range", "stdev")
   rownames(aucMatrix) <- "AUC"
   
   # Log standard deviation of AUC values
@@ -386,6 +387,7 @@ assessInitiationPointSusceptibility <- function(
   # Calculate error rates stats
   errorRateMin <- as.data.frame(lapply(iterationsErrorRates, min, na.rm = TRUE))
   errorRateMax <- as.data.frame(lapply(iterationsErrorRates, max, na.rm = TRUE))
+  errorRateAvg <- as.data.frame(lapply(iterationsErrorRates, mean, na.rm = TRUE))
   errorRateRange <- as.data.frame(lapply(iterationsErrorRates, function(x) {
     max(x, na.rm = TRUE) - min(x, na.rm = TRUE)
   }))
@@ -394,6 +396,7 @@ assessInitiationPointSusceptibility <- function(
   errorRateDf <- rbind(
     errorRateMin,
     errorRateMax,
+    errorRateAvg,
     errorRateRange,
     errorRateStdev
   )
@@ -401,7 +404,7 @@ assessInitiationPointSusceptibility <- function(
   errorRateDf <- t(errorRateDf)
   
   errorRateMatrix <- as.matrix(errorRateDf)
-  colnames(errorRateMatrix) <- c("min", "max", "range", "stdev")
+  colnames(errorRateMatrix) <- c("min", "max", "avg", "range", "stdev")
   
   # Log error rates stats
   logMsg("ERROR RATES:\n")
