@@ -1,17 +1,15 @@
-refRasterFile          <- "E:/NetmapData/Scottsburg/elev_scottsburg.flt"
+refRasterFile          <- "~/Work/Data/Scottsburg/elev_scottsburg.flt"
 varRasterFiles         <- list(
-  "E:/NetmapData/Scottsburg/grad_30.tif",
-  "E:/NetmapData/Scottsburg/plan_30.tif",
-  "E:/NetmapData/Scottsburg/pca_scott.flt"
+  "~/Work/Data/Scottsburg/elev_scottsburg.flt"
 )   
-initPointsFile         <- "E:/Netmapdata/Scottsburg/Scottsburg_Upslope.shp"
+initPointsFile         <- "~/Work/Data/Scottsburg/Scottsburg_Upslope.shp"
 noninitRatio           <- 1.5
 bufferRadius           <- 20
 bufferExtractionMethod <- "center cell"
 initRangeExpansion     <- 0
 iterations             <- 20
 testingProportion      <- 10
-outputDir              <- "E:/NetmapData"
+outputDir              <- "~/Work/Data/Scottsburg"
 
 # Load helper functions ------------------------------------------------------
 
@@ -130,15 +128,15 @@ noninitBuffers <- generateNoninitiationBuffers(
   bufferRadius
 )
 
-terra::plot(refRaster)
+terra::plot(analysisRegionMask)
 terra::polys(initBuffers, col = "blue")
 terra::polys(noninitBuffers, col = "red")
 
 # Create dataset -------------------------------------------------------------
 
 # By default, extract all values from initiation and non-initiation buffers
-initValues <- terra::extract(varsRaster, initBuffers)
-noninitValues <- terra::extract(varsRaster, noninitBuffers)
+initValues <- terra::extract(varsRaster, initBuffers, xy = TRUE)
+noninitValues <- terra::extract(varsRaster, noninitBuffers, xy = TRUE)
 
 extractionMethod <- "center cell"
 
@@ -187,27 +185,48 @@ dataset$class <- factor(dataset$class)
 # Filter out entries with NA values
 dataset <- na.omit(dataset)
 
-levels(dataset$class) <- c("TRUE", "FALSE")
+
 
 task <- mlr3spatiotempcv::TaskClassifST$new(
   "landslides",
   backend = mlr3::as_data_backend(dataset),
   target = "class",
-  positive = "TRUE",
+  positive = "initiation",
   extra_args = list(coordinate_names = c("x", "y"), crs = terra::crs(refRaster, proj = TRUE))
 )
 
-learner <- mlr3::lrn(
-  "classif.rpart",
-  maxdepth = 3,
-  predict_type = "prob"
-)
+# Define resampling method for repeated k-fold spatial cross-validation
+resampling <- mlr3::rsmp("repeated_spcv_coords", folds = 5, repeats = 10)
 
-resampling <- mlr3::rsmp("repeated_spcv_coords", folds = 4, repeats = 2)
+mlr3spatiotempcv::autoplot(resampling, task, fold_id = c(1:5), repeats_id = 1)
 
+# Define a random forest learner
+learner <- mlr3::lrn("classif.randomForest", predict_type = "prob")
+
+# Perform resampling method with the random forest learner and the landslides task
 result <- mlr3::resample(
   task = task,
   learner = learner,
   resampling = resampling
 )
 
+# Display ROC plot for model 1 predictions
+mlr3viz::autoplot(result$predictions()[[1]], type = "roc")
+
+# Rows used for testing model 1
+result$resampling$test_set(1)
+
+# Predictions for model 1
+result$predictions()[[1]]
+
+# Confusion matrix for model 1 predictions
+result$predictions()[[1]]$confusion
+
+# Calculate average classification error
+result$aggregate(measures = mlr3::msr("classif.ce"))
+
+# Calculate average area under ROC curve
+result$aggregate(measures = mlr3::msr("classif.auc"))
+
+# Calculate average accuracy (proportion of correct predictions out of all predictions)
+result$aggregate(measures = mlr3::msr("classif.acc"))
