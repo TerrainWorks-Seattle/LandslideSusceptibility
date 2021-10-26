@@ -35,7 +35,7 @@
 #'   bufferRadius = 20,
 #'   bufferExtractionMethod = "center cell",
 #'   initRangeExpansion = 50,
-#'   iterations = 2,
+#'   iterations = 1,
 #'   outputDir = "E:/NetmapData/Scottsburg"
 #' )
 #' }
@@ -223,6 +223,9 @@ predictLandslideSusceptibility <- function(
       noninitBuffers,
       bufferExtractionMethod
     )
+    
+    coordsCols <- names(trainingData) %in% c("x", "y")  
+    trainingData <- trainingData[,!coordsCols]
     
     # Train a new random forest model
     rfModel <- randomForest::randomForest(

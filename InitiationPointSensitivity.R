@@ -214,6 +214,9 @@ assessInitiationPointSusceptibility <- function(
     bufferExtractionMethod
   )
   
+  coordsCols <- names(allBuffersData) %in% c("x", "y")  
+  allBuffersData <- allBuffersData[,!coordsCols]
+  
   # For each explanatory variable, draw a box plot of all the buffer values
   for (varName in names(varsRaster)) {
     # get class values
@@ -289,6 +292,9 @@ assessInitiationPointSusceptibility <- function(
       trainingNoninitBuffers,
       bufferExtractionMethod
     )
+    
+    coordsCols <- names(landslideData) %in% c("x", "y")  
+    trainingData <- trainingData[,!coordsCols]
     
     # Train a new random forest model
     rfModel <- randomForest::randomForest(

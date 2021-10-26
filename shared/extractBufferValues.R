@@ -16,8 +16,8 @@
 extractBufferValues <- function(raster, initBuffers, noninitBuffers, extractionMethod) {
   
   # By default, extract all values from initiation and non-initiation buffers
-  initValues <- terra::extract(raster, initBuffers)
-  noninitValues <- terra::extract(raster, noninitBuffers)
+  initValues <- terra::extract(raster, initBuffers, xy = TRUE)
+  noninitValues <- terra::extract(raster, noninitBuffers, xy = TRUE)
   
   # Subset if a different buffer extraction method was requested
   if (extractionMethod == "center cell") {
@@ -31,8 +31,8 @@ extractBufferValues <- function(raster, initBuffers, noninitBuffers, extractionM
     noninitCoords <- terra::geom(noninitCenters)[,c("x","y")]
     
     # Extract values from cells containing center points
-    initValues <- terra::extract(raster, initCoords)
-    noninitValues <- terra::extract(raster, noninitCoords)
+    initValues <- terra::extract(raster, initCoords, xy = TRUE)
+    noninitValues <- terra::extract(raster, noninitCoords, xy = TRUE)
     
   } else if (extractionMethod == "max gradient cell") {
     

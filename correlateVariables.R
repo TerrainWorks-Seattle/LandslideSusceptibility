@@ -92,6 +92,9 @@ allBuffersData <- extractBufferValues(
   bufferExtractionMethod
 )
 
+coordsCols <- names(landslideData) %in% c("x", "y")  
+allBuffersData <- allBuffersData[,!coordsCols]
+
 # Plot each variable against the others
 pairs(
   allBuffersData[1:3],
