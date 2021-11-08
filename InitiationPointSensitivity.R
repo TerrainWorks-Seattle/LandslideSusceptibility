@@ -293,7 +293,7 @@ assessInitiationPointSusceptibility <- function(
       bufferExtractionMethod
     )
     
-    coordsCols <- names(landslideData) %in% c("x", "y")  
+    coordsCols <- names(trainingData) %in% c("x", "y")  
     trainingData <- trainingData[,!coordsCols]
     
     # Train a new random forest model
