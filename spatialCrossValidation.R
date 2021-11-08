@@ -8,7 +8,8 @@ noninitRatio           <- 1.5
 bufferRadius           <- 20
 bufferExtractionMethod <- "center cell"
 initRangeExpansion     <- 0
-iterations             <- 20
+noninitSets            <- 10 # How many sets of non-init points to generate and CV with
+cvRepetitions          <- 2  # How many times should k-fold CV be repeated?
 testingProportion      <- 10
 outputDir              <- "E:/NetmapData/Scottsburg"
 
@@ -130,81 +131,132 @@ noninitRegion[initCellIndices] <- NA
 # Determine how many non-initiation buffers to generate
 noninitBuffersCount <- ceiling(length(initPoints) * noninitRatio)
 
-# Generate non-initiation buffers
-noninitBuffers <- generateNoninitiationBuffers(
-  noninitBuffersCount,
-  noninitRegion,
-  bufferRadius
-)
+# Perform cross-validation -----------------------------------------------------
 
-terra::plot(analysisRegionMask)
-terra::polys(initBuffers, col = "blue")
-terra::polys(noninitBuffers, col = "red")
-
-# Create dataset -------------------------------------------------------------
-
-dataset <- extractBufferValues(
-  varsRaster,
-  initBuffers,
-  noninitBuffers,
-  bufferExtractionMethod
-)
-
-# ---------------------------------------------------------------------------
-
-# Set up a machine learning task for landslide data
-task <- mlr3spatiotempcv::TaskClassifST$new(
-  "landslides",
-  backend = mlr3::as_data_backend(dataset),
-  target = "class",
-  positive = "initiation",
-  extra_args = list(
-    coordinate_names = c("x", "y"),
-    crs = terra::crs(refRaster, proj = TRUE)
+for (i in seq_len(noninitSets)) {
+  
+  # Generate non-initiation buffers --------------------------------------------
+  
+  noninitBuffers <- generateNoninitiationBuffers(
+    noninitBuffersCount,
+    noninitRegion,
+    bufferRadius
   )
-)
+  
+  # Create full landslide dataset ----------------------------------------------
+  
+  landslideData <- extractBufferValues(
+    varsRaster,
+    initBuffers,
+    noninitBuffers,
+    bufferExtractionMethod
+  )
+  
+  # Define cross-validation method ---------------------------------------------
+  
+  # Set up a machine learning task for landslide data
+  task <- mlr3spatiotempcv::TaskClassifST$new(
+    "landslides",
+    backend = mlr3::as_data_backend(landslideData),
+    target = "class",
+    positive = "initiation",
+    extra_args = list(
+      coordinate_names = c("x", "y"),
+      crs = terra::crs(refRaster, proj = TRUE)
+    )
+  )
+  
+  # Create a version of the variables raster that only keeps cell values within 
+  # the analysis area
+  analysisVarsRaster <- terra::mask(varsRaster, analysisRegionMask)
+  
+  # Set up a resampling method for repeated k-fold spatial cross-validation
+  resampling <- mlr3::rsmp("repeated_spcv_coords", folds = 5, repeats = cvRepetitions)
+  
+  # Perform the resampling method on the task
+  resampling <- resampling$instantiate(task)
+  
+  # --------------------------------------------------------------------
+  
+  for (j in seq_len(resampling$iters)) {
+    
+    ## Train model -------------------------------------------------------------
+    
+    # Get training data
+    trainingIndices <- resampling$train_set(j)
+    trainingData <- landslideData[trainingIndices]
+    
+    # Remove columns for coordinates
+    coordsCols <- names(trainingData) %in% c("x", "y")  
+    trainingData <- trainingData[,!coordsCols]
+    
+    # Train random forest model
+    rfModel <- randomForest::randomForest(
+      formula = class ~ .,
+      data = trainingData
+    )
+    
+    ## Evaluate model ----------------------------------------------------------
+    
+    # Get testing data
+    testingIndices <- resampling$test_set(j)
+    testingData <- landslideData[testingIndices]
+    
+    # Remove columns for coordinates
+    coordsCols <- names(testingData) %in% c("x", "y")  
+    testingData <- testingData[,!coordsCols]
+    
+    # Calculate initiation probability for each test entry
+    initProb <- predict(
+      rfModel,
+      type = "prob",
+      newdata = testingData
+    )[,"initiation"]
+    
+    # Calculate ROC stats
+    rocStats <- TerrainWorksUtils::calcRocStats(
+      classes = testingData$class,
+      probs = initProb,
+      "initiation",
+      "non-initiation"
+    )
+    
+    # Log AUC value
+    auc <- rocStats$auc@y.values[[1]]
+    
+  }
+  
+}
 
-# Create a version of the variables raster that only keeps cell values within 
-# the analysis area
-analysisVarsRaster <- terra::mask(varsRaster, analysisRegionMask)
-
-# Set up a resampling method for repeated k-fold spatial cross-validation
-resampling <- mlr3::rsmp("repeated_spcv_coords", folds = 5, repeats = 2)
-
-# --------------------------------------------------------------------
-
-# Set up a random forest learner
-learner <- mlr3::lrn("classif.ranger", predict_type = "prob")
-
-# Plot each fold's train/test points distribution for iteration 1
-#mlr3spatiotempcv::autoplot(resampling, task, fold_id = c(1:5), repeats_id = 1)
-
-# Perform resampling method with the random forest learner and the landslides task
-result <- mlr3::resample(
-  task = task,
-  learner = learner,
-  resampling = resampling
-)
-
-# Inspect results --------------------------------------------------------
-
-# Model 1 ROC plot
-mlr3viz::autoplot(result$predictions()[[4]], type = "roc")
-
-# Model 1 testing rows
-result$resampling$test_set(1)
-
-# Model 1 predictions
-result$predictions()[[1]]
-
-# Model 1 confusion matrix
-result$predictions()[[1]]$confusion
-
-# Calculate average classification error
-result$aggregate(measures = mlr3::msr("classif.ce"))
-
-# Calculate average area under ROC curve
-result$aggregate(measures = mlr3::msr("classif.auc"))
-
-# Calculate average accuracy (correct predictions out of all predictions)
-result$aggregate(measures = mlr3::msr("classif.acc"))
+# # Set up a random forest learner
+# learner <- mlr3::lrn("classif.ranger", predict_type = "prob")
+# 
+# # Plot each fold's train/test points distribution for iteration 1
+# #mlr3spatiotempcv::autoplot(resampling, task, fold_id = c(1:5), repeats_id = 1)
+# 
+# # Perform resampling method with the random forest learner and the landslides task
+# result <- mlr3::resample(
+#   task = task,
+#   learner = learner,
+#   resampling = resampling
+# )
+#
+# # Inspect results --------------------------------------------------------
+# 
+# # Model 1 ROC plot
+# mlr3viz::autoplot(result$predictions()[[4]], type = "roc")
+# 
+# # Model 1 predictions
+# result$predictions()[[1]]
+# 
+# # Model 1 confusion matrix
+# result$predictions()[[1]]$confusion
+# 
+# # Calculate average classification error
+# result$aggregate(measures = mlr3::msr("classif.ce"))
+# 
+# # Calculate average area under ROC curve
+# result$aggregate(measures = mlr3::msr("classif.auc"))
+# 
+# # Calculate average accuracy (correct predictions out of all predictions)
+# result$aggregate(measures = mlr3::msr("classif.acc"))
