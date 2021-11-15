@@ -57,10 +57,10 @@ assessInitiationPointSusceptibility <- function(
   
   # Load helper functions ------------------------------------------------------
   
-  source("./shared/createInitiationRange.R")
-  source("./shared/createAnalysisRegionMask.R")
-  source("./shared/generateNoninitiationBuffers.R")
-  source("./shared/extractBufferValues.R")
+  source("./helper/createInitiationRange.R")
+  source("./helper/createAnalysisRegionMask.R")
+  source("./helper/generateNoninitiationBuffers.R")
+  source("./helper/extractBufferValues.R")
   
   # Validate parameters --------------------------------------------------------
   

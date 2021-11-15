@@ -58,10 +58,10 @@ predictLandslideSusceptibility <- function(
   # directory to the folder that holds the tool's script file, so any sourced 
   # file paths must be relative to that folder.
   
-  source("./shared/createInitiationRange.R")
-  source("./shared/createAnalysisRegionMask.R")
-  source("./shared/generateNoninitiationBuffers.R")
-  source("./shared/extractBufferValues.R")
+  source("./helper/createInitiationRange.R")
+  source("./helper/createAnalysisRegionMask.R")
+  source("./helper/generateNoninitiationBuffers.R")
+  source("./helper/extractBufferValues.R")
   
   # Validate parameters --------------------------------------------------------
   
