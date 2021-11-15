@@ -25,29 +25,29 @@
 #'                               initiation range by
 #' @param noninitSetsCount       The number of different non-initiation sets to
 #'                               generate
-#' @param folds                  The number of folds to use for k-fold cross-
+#' @param foldsCount             The number of folds to use for k-fold cross-
 #'                               validation
-#' @param repetitions            How many times to repeat k-fold cross-
+#' @param repetitionsCount       How many times to repeat k-fold cross-
 #'                               validation for each non-initiation set
 #' @param outputDir              The directory to write output files to
 #' 
 #' @example
 #' \donttest {
 #' performCrossValidation(
-#'   refRasterFile          = "~/Work/Data/Scottsburg/elev_scottsburg.flt",
+#'   refRasterFile          = "E:/NetmapData/Scottsburg/elev_scottsburg.flt",
 #'   varRasterFiles         = list(
-#'     "~/Work/Data/Scottsburg/grad_30.tif",
-#'     "~/Work/Data/Scottsburg/plan_30.tif"
+#'     "E:/NetmapData/Scottsburg/grad_30.tif",
+#'     "E:/NetmapData/Scottsburg/plan_30.tif"
 #'   ),
-#'   initPointsFile         = "~/Work/Data/Scottsburg/Scottsburg_Upslope.shp",
+#'   initPointsFile         = "E:/NetmapData/Scottsburg/Scottsburg_Upslope.shp",
 #'   noninitRatio           = 1,
 #'   bufferRadius           = 20,
 #'   bufferExtractionMethod = "center cell",
 #'   initRangeExpansion     = 0,
 #'   noninitSetsCount       = 10, 
-#'   folds                  = 4,
-#'   repetitions            = 5,
-#'   outputDir              = "~/Work/Data/Scottsburg"
+#'   foldsCount             = 4,
+#'   repetitionsCount       = 5,
+#'   outputDir              = "E:/NetmapData/Scottsburg"
 #' )
 #' }
 
@@ -60,8 +60,8 @@ performCrossValidation <- function(
   bufferExtractionMethod,
   initRangeExpansion,
   noninitSetsCount,
-  folds,
-  repetitions,
+  foldsCount,
+  repetitionsCount,
   outputDir
 ) {
   
@@ -117,11 +117,11 @@ performCrossValidation <- function(
     stop("Non-initiation sets cannot be fewer than 1.")
   
   # Validate number of folds
-  if (folds < 1)
+  if (foldsCount < 1)
     stop("Folds cannot be fewer than 1.")
   
   # Validate number of repetitions
-  if (repetitions < 1)
+  if (repetitionsCount < 1)
     stop("Repetitions cannot be fewer than 1.")
   
   # Validate output directory
@@ -171,11 +171,7 @@ performCrossValidation <- function(
   # Generate non-initiation buffers --------------------------------------------
   
   # Calculate initiation range for each variable
-  initRange <- createInitiationRange(
-    varsRaster,
-    initBuffers,
-    initRangeExpansion
-  )
+  initRange <- createInitiationRange(varsRaster, initBuffers, initRangeExpansion)
   
   # Log initiation range matrix
   logMsg("INITIATION RANGES:\n")
@@ -184,10 +180,7 @@ performCrossValidation <- function(
   
   # Identify cells in the study region that have variable values within their 
   # initiation ranges
-  analysisRegionMask <- createAnalysisRegionMask(
-    varsRaster,
-    initRange
-  )
+  analysisRegionMask <- createAnalysisRegionMask(varsRaster, initRange)
   
   # Define the region where non-initiation points can be generated
   
@@ -208,7 +201,8 @@ performCrossValidation <- function(
   
   # Perform cross-validation using different sets of non-initiation buffers ----
   
-  iterationsCount <- noninitSetsCount * folds * repetitions
+  # Total number of iterations
+  iterationsCount <- noninitSetsCount * foldsCount * repetitionsCount
   
   # Place to store model auc value for each iteration
   iterationsAucValues <- c()
@@ -261,7 +255,11 @@ performCrossValidation <- function(
     analysisVarsRaster <- terra::mask(varsRaster, analysisRegionMask)
     
     # Set up a resampling method for repeated k-fold spatial cross-validation
-    resampling <- mlr3::rsmp("repeated_spcv_coords", folds = folds, repeats = repetitions)
+    resampling <- mlr3::rsmp(
+      "repeated_spcv_coords",
+      folds = foldsCount,
+      repeats = repetitionsCount
+    )
     
     # Perform the resampling method on the task
     resampling <- resampling$instantiate(task)
@@ -426,9 +424,9 @@ tool_exec <- function(in_params, out_params) {
     bufferExtractionMethod = in_params[[6]],
     initRangeExpansion     = in_params[[7]],
     noninitSetsCount       = in_params[[8]],
-    folds                  = in_params[[8]],
-    repetitions            = in_params[[9]],
-    outputDir              = in_params[[10]]
+    foldsCount             = in_params[[9]],
+    repetitionsCount       = in_params[[10]],
+    outputDir              = in_params[[11]]
   )
   
   return(out_params)
