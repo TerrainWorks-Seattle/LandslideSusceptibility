@@ -40,5 +40,3 @@ result$aggregate(measures = mlr3::msr("classif.auc"))
 
 # Calculate average accuracy (proportion of correct predictions out of all predictions)
 result$aggregate(measures = mlr3::msr("classif.acc"))
-
-
