@@ -30,6 +30,26 @@
 #' @param repetitions            How many times to repeat k-fold cross-
 #'                               validation for each non-initiation set
 #' @param outputDir              The directory to write output files to
+#' 
+#' @example
+#' \donttest {
+#' performCrossValidation(
+#'   refRasterFile          = "~/Work/Data/Scottsburg/elev_scottsburg.flt",
+#'   varRasterFiles         = list(
+#'     "~/Work/Data/Scottsburg/grad_30.tif",
+#'     "~/Work/Data/Scottsburg/plan_30.tif"
+#'   ),
+#'   initPointsFile         = "~/Work/Data/Scottsburg/Scottsburg_Upslope.shp",
+#'   noninitRatio           = 1,
+#'   bufferRadius           = 20,
+#'   bufferExtractionMethod = "center cell",
+#'   initRangeExpansion     = 0,
+#'   noninitSetsCount       = 10, 
+#'   folds                  = 4,
+#'   repetitions            = 5,
+#'   outputDir              = "~/Work/Data/Scottsburg"
+#' )
+#' }
 
 performCrossValidation <- function(
   refRasterFile,
@@ -339,56 +359,65 @@ performCrossValidation <- function(
   
   logMsg("SUMMARY --------------------------------------------------\n\n")
   
-  # Calculate AUC summary stats
-  aucMin <- min(iterationsAucValues, na.rm = TRUE)
-  aucMax <- max(iterationsAucValues, na.rm = TRUE)
-  aucRange <- diff(c(aucMin, aucMax))
-  aucMean <- mean(iterationsAucValues, na.rm = TRUE)
-  aucSd <- sd(iterationsAucValues, na.rm = TRUE)
+  # Summarize AUC value and error rates across all iterations
+  aucValuesSummary <- summarizeAucValues(iterationsAucValues)
+  errorRatesSummary <- summarizeErrorRates(iterationsErrorRates)
   
-  aucMatrix <- matrix(c(aucMin, aucMax, aucRange, aucMean, aucSd), ncol = 1)
-  aucMatrix <- t(aucMatrix)
-  colnames(aucMatrix) <- c("min", "max", "range", "mean", "sd")
-  rownames(aucMatrix) <- "AUC"
-  
-  # Log standard deviation of AUC values
+  # Log summary of AUC values
   logMsg("AUC:\n")
-  logObj(aucMatrix)
+  logObj(aucValuesSummary)
   logMsg("\n")
   
-  # Calculate error rates stats
-  errorRateMin <- as.data.frame(lapply(iterationsErrorRates, min, na.rm = TRUE))
-  errorRateMax <- as.data.frame(lapply(iterationsErrorRates, max, na.rm = TRUE))
-  errorRateRange <- as.data.frame(lapply(iterationsErrorRates, function(x) {
-    max(x, na.rm = TRUE) - min(x, na.rm = TRUE)
-  }))
-  errorRateMean <- as.data.frame(lapply(iterationsErrorRates, mean, na.rm = TRUE))
-  errorRateSd <- as.data.frame(lapply(iterationsErrorRates, sd, na.rm = TRUE))
-  
-  errorRateDf <- rbind(
-    errorRateMin,
-    errorRateMax,
-    errorRateRange,
-    errorRateMean,
-    errorRateSd
-  )
-  
-  errorRateDf <- t(errorRateDf)
-  
-  errorRateMatrix <- as.matrix(errorRateDf)
-  colnames(errorRateMatrix) <- c("min", "max", "range", "mean", "sd")
-  
-  # Log error rates stats
+  # Log summary of error rates
   logMsg("ERROR RATES:\n")
-  logObj(errorRateMatrix)
+  logObj(errorRatesSummary)
   
 }
 
+summarizeAucValues <- function(aucValues) {
+  
+  # Calculate AUC value statistics
+  aucMin <- min(aucValues, na.rm = TRUE)
+  aucMax <- max(aucValues, na.rm = TRUE)
+  aucRange <- diff(c(aucMin, aucMax))
+  aucMean <- mean(aucValues, na.rm = TRUE)
+  aucSd <- sd(aucValues, na.rm = TRUE)
+  
+  # Create summary table
+  aucSummary <- matrix(c(aucMin, aucMax, aucRange, aucMean, aucSd), ncol = 1)
+  aucSummary <- t(aucSummary)
+  colnames(aucSummary) <- c("min", "max", "range", "mean", "sd")
+  rownames(aucSummary) <- "AUC"
+  
+  return(aucSummary)
+  
+}
 
-# ArcGIS script tool entrypoint
+summarizeErrorRates <- function(errorRates) {
+  
+  # Calculate error rates statistics
+  erMin <- as.data.frame(lapply(errorRates, min, na.rm = TRUE))
+  erMax <- as.data.frame(lapply(errorRates, max, na.rm = TRUE))
+  erRange <- as.data.frame(lapply(errorRates, function(x) {
+    max(x, na.rm = TRUE) - min(x, na.rm = TRUE)
+  }))
+  erMean <- as.data.frame(lapply(errorRates, mean, na.rm = TRUE))
+  erSd <- as.data.frame(lapply(errorRates, sd, na.rm = TRUE))
+  
+  # Create summary table
+  erDf <- rbind(erMin, erMax, erRange, erMean, erSd)
+  erDf <- t(erDf)
+  erSummary <- as.matrix(erDf)
+  colnames(erSummary) <- c("min", "max", "range", "mean", "sd")
+  
+  return(erSummary)
+  
+}
+
+# Entrypoint for ArcGIS script tool
 tool_exec <- function(in_params, out_params) {
   
-  assessInitiationPointSusceptibility(
+  performCrossValidation(
     refRasterFile          = in_params[[1]],
     varRasterFiles         = in_params[[2]],
     initPointsFile         = in_params[[3]],
@@ -404,23 +433,4 @@ tool_exec <- function(in_params, out_params) {
   
   return(out_params)
   
-}
-
-if (FALSE) {
-  performCrossValidation(
-    refRasterFile          = "~/Work/Data/Scottsburg/elev_scottsburg.flt",
-    varRasterFiles         = list(
-                               "~/Work/Data/Scottsburg/grad_30.tif",
-                               "~/Work/Data/Scottsburg/plan_30.tif"
-                             ),
-    initPointsFile         = "~/Work/Data/Scottsburg/Scottsburg_Upslope.shp",
-    noninitRatio           = 1,
-    bufferRadius           = 20,
-    bufferExtractionMethod = "center cell",
-    initRangeExpansion     = 0,
-    noninitSetsCount       = 20, 
-    folds                  = 5,
-    repetitions            = 5,
-    outputDir              = "~/Work/Data/Scottsburg"
-  )
 }
