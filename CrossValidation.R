@@ -25,10 +25,10 @@
 #'                               initiation range by
 #' @param noninitSetsCount       The number of different non-initiation sets to
 #'                               generate
-#' @param foldsCount             The number of folds to use for k-fold cross-
-#'                               validation
 #' @param repetitionsCount       How many times to repeat k-fold cross-
 #'                               validation for each non-initiation set
+#' @param foldsCount             The number of folds to use for k-fold cross-
+#'                               validation
 #' @param generateProbRaster     Should an average probability raster be 
 #'                               generated?
 #' @param outputDir              The directory to write output files to
@@ -47,8 +47,8 @@
 #'   bufferExtractionMethod = "center cell",
 #'   initRangeExpansion     = 0,
 #'   noninitSetsCount       = 10, 
-#'   foldsCount             = 4,
 #'   repetitionsCount       = 5,
+#'   foldsCount             = 4,
 #'   generateProbRaster     = true,
 #'   outputDir              = "E:/NetmapData/Scottsburg"
 #' )
@@ -63,8 +63,8 @@ performCrossValidation <- function(
   bufferExtractionMethod,
   initRangeExpansion,
   noninitSetsCount,
-  foldsCount,
   repetitionsCount,
+  foldsCount,
   generateProbRaster,
   outputDir
 ) {
@@ -122,13 +122,13 @@ performCrossValidation <- function(
   if (noninitSetsCount < 1)
     stop("Non-initiation sets cannot be fewer than 1.")
   
-  # Validate number of folds
-  if (foldsCount < 1)
-    stop("Folds cannot be fewer than 1.")
-  
   # Validate number of repetitions
   if (repetitionsCount < 1)
     stop("Repetitions cannot be fewer than 1.")
+  
+  # Validate number of folds
+  if (foldsCount < 1)
+    stop("Folds cannot be fewer than 1.")
   
   # Validate output directory
   if (!file.exists(outputDir))
@@ -455,8 +455,8 @@ tool_exec <- function(in_params, out_params) {
     bufferExtractionMethod = in_params[[6]],
     initRangeExpansion     = in_params[[7]],
     noninitSetsCount       = in_params[[8]],
-    foldsCount             = in_params[[9]],
-    repetitionsCount       = in_params[[10]],
+    repetitionsCount       = in_params[[9]],
+    foldsCount             = in_params[[10]],
     generateProbRaster     = in_params[[11]],
     outputDir              = in_params[[12]]
   )
