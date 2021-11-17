@@ -7,7 +7,7 @@
 #' The process:
 #' 1. Use initiation buffers to define an analysis region
 #' 2. Generate a set of non-initiation buffers in the analysis region
-#' 3. Extract landslide data values from all buffers
+#' 3. Extract landslide dataset from all buffers
 #' 4. Perform repeated k-fold spatial cross-validation on dataset
 #' 5. Repeat from step 2 a given number of times 
 #'
@@ -85,6 +85,8 @@ performCrossValidation <- function(
   source("./helper/createAnalysisRegionMask.R")
   source("./helper/generateNoninitiationBuffers.R")
   source("./helper/extractBufferValues.R")
+  source("./helper/summarizeVector.R")
+  source("./helper/summarizeDataFrame.R")
   
   # Validate parameters --------------------------------------------------------
   
@@ -390,9 +392,12 @@ performCrossValidation <- function(
   
   logMsg("SUMMARY --------------------------------------------------\n\n")
   
-  # Summarize AUC value and error rates across all iterations
-  aucValuesSummary <- summarizeAucValues(iterationsAucValues)
-  errorRatesSummary <- summarizeErrorRates(iterationsErrorRates)
+  # Summarize AUC values across all iterations
+  aucValuesSummary <- summarizeVector(iterationsAucValues)
+  rownames(aucValuesSummary) <- "AUC"
+  
+  # Summarize error rates across all iterations
+  errorRatesSummary <- summarizeDataFrame(iterationsErrorRates)
   
   # Log summary of AUC values
   logMsg("AUC:\n")
@@ -416,46 +421,6 @@ performCrossValidation <- function(
     # Delete temporary probability raster files
     sapply(probRasterFiles, function(file) unlink(file))
   }
-  
-}
-
-summarizeAucValues <- function(aucValues) {
-  
-  # Calculate AUC value statistics
-  aucMin <- min(aucValues, na.rm = TRUE)
-  aucMax <- max(aucValues, na.rm = TRUE)
-  aucRange <- diff(c(aucMin, aucMax))
-  aucMean <- mean(aucValues, na.rm = TRUE)
-  aucSd <- sd(aucValues, na.rm = TRUE)
-  
-  # Create summary table
-  aucSummary <- matrix(c(aucMin, aucMax, aucRange, aucMean, aucSd), ncol = 1)
-  aucSummary <- t(aucSummary)
-  colnames(aucSummary) <- c("min", "max", "range", "mean", "sd")
-  rownames(aucSummary) <- "AUC"
-  
-  return(aucSummary)
-  
-}
-
-summarizeErrorRates <- function(errorRates) {
-  
-  # Calculate error rates statistics
-  erMin <- as.data.frame(lapply(errorRates, min, na.rm = TRUE))
-  erMax <- as.data.frame(lapply(errorRates, max, na.rm = TRUE))
-  erRange <- as.data.frame(lapply(errorRates, function(x) {
-    max(x, na.rm = TRUE) - min(x, na.rm = TRUE)
-  }))
-  erMean <- as.data.frame(lapply(errorRates, mean, na.rm = TRUE))
-  erSd <- as.data.frame(lapply(errorRates, sd, na.rm = TRUE))
-  
-  # Create summary table
-  erDf <- rbind(erMin, erMax, erRange, erMean, erSd)
-  erDf <- t(erDf)
-  erSummary <- as.matrix(erDf)
-  colnames(erSummary) <- c("min", "max", "range", "mean", "sd")
-  
-  return(erSummary)
   
 }
 
