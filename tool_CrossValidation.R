@@ -1,8 +1,9 @@
 #' @title Perform cross-validation
 #'
 #' @description Performs repeated k-fold spatial cross-validation using 
-#' different sets of generated non-initiation points. Outputs a log file that 
-#' records and summarizes model performance.
+#' different sets of generated non-initiation points. Outputs an average 
+#' landslide susceptibility raster and a log file that records and summarizes 
+#' model performance.
 #' 
 #' The process:
 #' 1. Use initiation buffers to define an analysis region
@@ -11,27 +12,30 @@
 #' 4. Perform repeated k-fold spatial cross-validation on dataset
 #' 5. Repeat from step 2 a given number of times 
 #'
-#' @param refRasterFile          File of a raster to use as a grid reference 
-#' @param varRasterFiles         List of raster files to use as explanatory 
-#'                               variables
-#' @param initPointsFile         File of initiation points
+#' @param refRasterFile          A raster file to use as a grid reference.
+#' @param varRasterFiles         A list of raster files to use as explanatory 
+#'                               variables.
+#' @param initPointsFile         A shapefile of initiation points.
 #' @param noninitRatio           The ratio of non-initiation sites to initiation
-#'                               sites
-#' @param bufferRadius           The radius of site buffers
-#' @param bufferExtractionMethod The method to select values from site buffers. 
-#'                               Either: "all cells", "center cell", "max 
-#'                               gradient cell", or "max plan cell"
-#' @param initRangeExpansion     The proportion (in %) to expand each variable 
-#'                               initiation range by
+#'                               sites.
+#' @param bufferRadius           The radius of site buffers.
+#' @param bufferExtractionMethod The method used to select values from site 
+#'                               buffers for training/testing. Either: 
+#'                               "all cells", "center cell", 
+#'                               "max gradient cell", or "max plan cell".
+#' @param initRangeExpansion     The proportion (in %) to expand the initiation 
+#'                               range of each variable by.
 #' @param noninitSetsCount       The number of different non-initiation sets to
-#'                               generate
-#' @param repetitionsCount       How many times to repeat k-fold cross-
-#'                               validation for each non-initiation set
+#'                               generate.
+#' @param repetitionsCount       The number of times to repeat k-fold cross-
+#'                               validation.
 #' @param foldsCount             The number of folds to use for k-fold cross-
-#'                               validation
-#' @param generateProbRaster     Should an average probability raster be 
+#'                               validation.
+#' @param generateAvgProbRaster  Should an average probability raster be 
 #'                               generated?
-#' @param outputDir              The directory to write output files to
+#' @runName                      Name of this run. Used to name generated output
+#'                               files.
+#' @param outputDir              The directory to write output files to.
 #' 
 #' @example
 #' \donttest {
@@ -46,10 +50,11 @@
 #'   bufferRadius           = 20,
 #'   bufferExtractionMethod = "center cell",
 #'   initRangeExpansion     = 0,
-#'   noninitSetsCount       = 10, 
-#'   repetitionsCount       = 5,
+#'   noninitSetsCount       = 1, 
+#'   repetitionsCount       = 1,
 #'   foldsCount             = 4,
-#'   generateProbRaster     = true,
+#'   generateAvgProbRaster  = FALSE,
+#'   runName                = "scott_cv",
 #'   outputDir              = "E:/NetmapData/Scottsburg"
 #' )
 #' }
@@ -65,7 +70,8 @@ performCrossValidation <- function(
   noninitSetsCount,
   repetitionsCount,
   foldsCount,
-  generateProbRaster,
+  generateAvgProbRaster,
+  runName,
   outputDir
 ) {
   
@@ -106,11 +112,11 @@ performCrossValidation <- function(
   
   # Validate non-initiation ratio
   if (noninitRatio <= 0)
-    stop("Non-initiation points ratio cannot be <=0.")
+    stop("Non-initiation points ratio cannot be greater than 0.")
   
   # Validate buffer radius
   if (bufferRadius < 0)
-    stop("Buffer radius cannot be negative.")
+    stop("Buffer radius must be greatr than or equal to 0.")
   
   # Validate buffer extraction method
   if (!(bufferExtractionMethod %in% c("all cells", "center cell", "max gradient 
@@ -120,15 +126,22 @@ performCrossValidation <- function(
   
   # Validate number of non-initiation sets
   if (noninitSetsCount < 1)
-    stop("Non-initiation sets cannot be fewer than 1.")
+    stop("Non-initiation sets must be greater than or equal to 1.")
   
   # Validate number of repetitions
   if (repetitionsCount < 1)
-    stop("Repetitions cannot be fewer than 1.")
+    stop("Repetitions must be greater than or equal to 1.")
   
   # Validate number of folds
-  if (foldsCount < 1)
-    stop("Folds cannot be fewer than 1.")
+  if (foldsCount < 2)
+    stop("Folds must be greater than 1.")
+  
+  if (!is.logical(generateAvgProbRaster))
+    generateAvgProbRaster <- FALSE
+  
+  # Validate run name
+  if (nchar(runName) < 1)
+    stop("Must provide a run name")
   
   # Validate output directory
   if (!file.exists(outputDir))
@@ -136,16 +149,30 @@ performCrossValidation <- function(
   
   # Set up logging -------------------------------------------------------------
   
-  logFilename <- "cv_log.txt"
-  file.create(paste0(outputDir, "/", logFilename))
+  logFile <- paste0(outputDir, "/", runName, "_log.txt")
+  file.create(logFile)
   
-  logMsg <- function(msg) {
-    cat(msg, file = paste0(outputDir, "/", logFilename), append = TRUE)
-  }
+  logMsg <- function(msg) cat(msg, file = logFile, append = TRUE)
+  logObj <- function(obj) capture.output(obj, file = logFile, append = TRUE)
   
-  logObj <- function(obj) {
-    capture.output(obj, file = paste0(outputDir, "/", logFilename), append = TRUE)
-  }
+  # Log input parameters
+  logMsg("INPUT PARAMETERS:\n")
+  logMsg(paste0("  Reference raster: ", refRasterFile, "\n"))
+  logMsg("  Explanatory variable rasters:\n")
+  for (i in seq_along(varRasterFiles)) 
+    logMsg(paste0("    [", i, "] ", varRasterFiles[[i]], "\n"))
+  logMsg(paste0("  Initiation points: ", initPointsFile, "\n"))
+  logMsg(paste0("  Non-initiation points ratio: ", noninitRatio, "\n"))
+  logMsg(paste0("  Buffer radius: ", bufferRadius, "\n"))
+  logMsg(paste0("  Buffer extraction method: ", bufferExtractionMethod, "\n"))
+  logMsg(paste0("  Initiation range expansion: ", initRangeExpansion, "%\n"))
+  logMsg(paste0("  # non-initiation points sets: ", noninitSetsCount, "\n"))
+  logMsg(paste0("  # k-fold CV repetitions: ", repetitionsCount, "\n"))
+  logMsg(paste0("  # folds (k): ", foldsCount, "\n"))
+  logMsg(paste0("  Generate probability raster? ", generateAvgProbRaster, "\n"))
+  logMsg(paste0("  Run name: ", runName, "\n"))
+  logMsg(paste0("  Output directory: ", outputDir, "\n"))
+  logMsg("\n")
   
   # Load rasters ---------------------------------------------------------------
   
@@ -221,7 +248,7 @@ performCrossValidation <- function(
   )
   names(iterationsErrorRates) <- c("OOB", "initiation", "non-initiation")
   
-  if (generateProbRaster) {
+  if (generateAvgProbRaster) {
     # Create a version of the variables raster that only keeps cells within the 
     # analysis region
     analysisRegionVarsRaster <- terra::mask(varsRaster, analysisRegionMask)
@@ -279,6 +306,10 @@ performCrossValidation <- function(
     # Perform the resampling method on the task
     resampling <- resampling$instantiate(task)
     
+    # Remove coordinates columns from landslide dataset
+    coordsCols <- names(landslideData) %in% c("x", "y")  
+    landslideData <- landslideData[,!coordsCols]
+    
     # Perform repeated k-fold spatial cross-validation -------------------------
     
     for (repetition in seq_len(resampling$iters)) {
@@ -288,10 +319,6 @@ performCrossValidation <- function(
       # Get training data
       trainingIndices <- resampling$train_set(repetition)
       trainingData <- landslideData[trainingIndices,]
-      
-      # Remove columns for coordinates
-      coordsCols <- names(trainingData) %in% c("x", "y")  
-      trainingData <- trainingData[,!coordsCols]
       
       # Train random forest model
       rfModel <- randomForest::randomForest(
@@ -303,44 +330,33 @@ performCrossValidation <- function(
         flag = "0"), " ------------------------------------------------\n\n"))
       
       # Log model error rates
-      logMsg("MODEL ERROR RATES:\n")
-      errorRateDf <- data.frame(rfModel$err.rate[rfModel$ntree,])
-      colnames(errorRateDf) <- "error rate"
-      logObj(errorRateDf)
+      logMsg("TRAINING ERROR RATES:\n")
+      trainingEr <- data.frame(rfModel$err.rate[rfModel$ntree,])
+      colnames(trainingEr) <- "error rate"
+      logObj(trainingEr)
       logMsg("\n")
       
-      ## Evaluate model --------------------------------------------------------
+      ## Test model ------------------------------------------------------------
       
       # Get testing data
       testingIndices <- resampling$test_set(repetition)
       testingData <- landslideData[testingIndices,]
       
-      # Remove columns for coordinates
-      coordsCols <- names(testingData) %in% c("x", "y")
-      testingData <- testingData[,!coordsCols]
-      
-      # # Predict the class type of each test dataset entry
+      # Have model classify testing data
       prediction <- predict(
         rfModel,
         type = "response",
         newdata = testingData
       )
-
-      # Log test dataset confusion matrix
-      logMsg("TEST RESULTS:\n")
-      testConfusionMatrix <- table(prediction, testingData$class)
-      testConfusionMatrix <- data.frame(testConfusionMatrix[1,], testConfusionMatrix[2,])
-      colnames(testConfusionMatrix) <- c("initiation", "non-initiation")
-      rownames(testConfusionMatrix) <- c("true initiation", "true non-initiation")
-      logObj(testConfusionMatrix)
-      logMsg("\n")
       
-      # Calculate initiation probability for each test entry
+      # Have model predict initiation probability of test data
       initProb <- predict(
         rfModel,
         type = "prob",
         newdata = testingData
       )[,"initiation"]
+      
+      ## Record model test results ---------------------------------------------
       
       # Calculate ROC stats
       rocStats <- TerrainWorksUtils::calcRocStats(
@@ -350,21 +366,29 @@ performCrossValidation <- function(
         "non-initiation"
       )
       
-      ## Record iteration statistics -------------------------------------------
-      
       aucValue <- rocStats$auc@y.values[[1]]
       iterationsAucValues <- c(iterationsAucValues, aucValue)
       
       errorRates <- as.data.frame(rfModel$err.rate)[rfModel$ntree,]
       iterationsErrorRates <- rbind(iterationsErrorRates, errorRates)
       
-      logMsg(paste0("AUC: ", round(aucValue, digits = 7), "\n"))
+      # Log test confusion matrix
+      logMsg("TESTING CONFUSION MATRIX:\n")
+      testCf <- table(prediction, testingData$class)
+      testCf <- data.frame(testCf[1,], testCf[2,])
+      colnames(testCf) <- c("initiation", "non-initiation")
+      rownames(testCf) <- c("true initiation", "true non-initiation")
+      logObj(testCf)
+      logMsg("\n")
+      
+      
+      logMsg(paste0("TESTING AUC: ", round(aucValue, digits = 7), "\n"))
       logMsg("\n")
       
       ## Generate probability raster -------------------------------------------
       
-      if (generateProbRaster) {
-        # Generate a probability raster using this model
+      if (generateAvgProbRaster) {
+        # Have the model predict an initiation probability raster
         probRaster <- terra::predict(
           analysisRegionVarsRaster,
           rfModel,
@@ -376,11 +400,9 @@ performCrossValidation <- function(
         probRasterFile <- tempfile("prob", outputDir, ".tif")
         terra::writeRaster(probRaster, probRasterFile)
         
-        # Record the name of the probability raster
-        probRasterFiles[iterationNumber] <- probRasterFile 
+        # Record the name of the probability raster file
+        probRasterFiles[iterationNumber] <- probRasterFile
       }
-      
-      ## Increment the iteration -----------------------------------------------
       
       iterationNumber <- iterationNumber + 1
       
@@ -388,31 +410,32 @@ performCrossValidation <- function(
     
   }
   
-  # Summarize model performance ------------------------------------------------
+  # Summarize test results -----------------------------------------------------
   
   logMsg("SUMMARY --------------------------------------------------\n\n")
   
-  # Summarize AUC values across all iterations
+  # Summarize error rates
+  errorRatesSummary <- summarizeDataFrame(iterationsErrorRates)
+  
+  # Summarize AUC values
   aucValuesSummary <- summarizeVector(iterationsAucValues)
   rownames(aucValuesSummary) <- "AUC"
   
-  # Summarize error rates across all iterations
-  errorRatesSummary <- summarizeDataFrame(iterationsErrorRates)
+  # Log summary of error rates
+  logMsg("TESTING ERROR RATES:\n")
+  logObj(errorRatesSummary)
+  logMsg("\n")
   
   # Log summary of AUC values
-  logMsg("AUC:\n")
+  logMsg("TESTING AUC:\n")
   logObj(aucValuesSummary)
   logMsg("\n")
   
-  # Log summary of error rates
-  logMsg("ERROR RATES:\n")
-  logObj(errorRatesSummary)
-  
   # Generate average probability raster ----------------------------------------
   
-  if (generateProbRaster) {
+  if (generateAvgProbRaster) {
     # Create average probability raster
-    avgProbRasterFile <- paste0(outputDir, "/avg_prob.tif")
+    avgProbRasterFile <- paste0(outputDir, "/", runName, "_prob.tif")
     avgProbRaster <- createAverageRaster(probRasterFiles, avgProbRasterFile)
     
     # Save average probability raster
@@ -424,8 +447,6 @@ performCrossValidation <- function(
   
 }
 
-# Averages a set of rasters on disk and saves the result. Necessary
-# when low on memory or default temporary disk space.
 createAverageRaster <- function(rasterFiles, filename) {
   
   if (length(rasterFiles) == 0)
@@ -457,8 +478,9 @@ tool_exec <- function(in_params, out_params) {
     noninitSetsCount       = in_params[[8]],
     repetitionsCount       = in_params[[9]],
     foldsCount             = in_params[[10]],
-    generateProbRaster     = in_params[[11]],
-    outputDir              = in_params[[12]]
+    generateAvgProbRaster  = in_params[[11]], 
+    runName                = in_params[[12]],
+    outputDir              = in_params[[13]]
   )
   
   return(out_params)
