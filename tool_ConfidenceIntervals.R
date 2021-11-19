@@ -1,3 +1,8 @@
+#' @title Estimate confidence intervals
+#' 
+#' @description Generates a confidence interval raster from a series of 
+#' landslide initiation probability rasters. These are produced by models 
+#' created 
 
 estimateConfidenceIntervals <- function(
   refRasterFile,
@@ -7,8 +12,9 @@ estimateConfidenceIntervals <- function(
   bufferRadius,
   bufferExtractionMethod,
   initRangeExpansion,
-  folds,
-  repetitions,
+  repetitionsCount,
+  foldsCount,
+  pValue,
   outputDir
 ) {
   
@@ -49,11 +55,11 @@ estimateConfidenceIntervals <- function(
   
   # Validate non-initiation ratio
   if (noninitRatio <= 0)
-    stop("Non-initiation points ratio cannot be <=0.")
+    stop("Non-initiation points ratio must be greater than 0.")
   
   # Validate buffer radius
   if (bufferRadius < 0)
-    stop("Buffer radius cannot be negative.")
+    stop("Buffer radius must be greater than or equal to 0.")
   
   # Validate buffer extraction method
   if (!(bufferExtractionMethod %in% c("all cells", "center cell", 
@@ -62,8 +68,12 @@ estimateConfidenceIntervals <- function(
        'max gradient cell', or 'max plan cell'.")
   
   # Validate number of repetitions
-  if (repetitions < 1)
-    stop("Repetitions cannot be fewer than 1.")
+  if (repetitionsCount < 1)
+    stop("Repetitions must be greater than or equal to 1.")
+  
+  # Validate number of folds
+  if (foldsCount < 2)
+    stop("Folds must be greater than 1.")
   
   # Validate output directory
   if (!file.exists(outputDir))
@@ -163,14 +173,14 @@ estimateConfidenceIntervals <- function(
   # Set up a resampling method for repeated k-fold spatial cross-validation
   resampling <- mlr3::rsmp(
     "repeated_spcv_coords",
-    folds = folds,
-    repeats = repetitions
+    folds = foldsCount,
+    repeats = repetitionsCount
   )
   
   totalIterations <- resampling$iters
   
   # Generate each CV iteration's training/testing sets using the resampling method
-  cvSets <- resampling$instantiate(task)
+  resampling <- resampling$instantiate(task)
   
   # Perform cross-validation ---------------------------------------------------
   
@@ -180,11 +190,16 @@ estimateConfidenceIntervals <- function(
   # the analysis region
   analysisVarsRaster <- terra::mask(varsRaster, analysisRegionMask)
   
+  # Remove coordinates columns from landslide dataset
+  coordsCols <- names(landslideData) %in% c("x", "y")  
+  landslideData <- landslideData[,!coordsCols]
+  
   for (i in seq_len(totalIterations)) {
+    
     ## Get iteration training/testing data ------------------------------------
     
-    trainingSet <- cvSets$train_set(i)
-    testingSet <- cvSets$test_set(i)
+    trainingSet <- resampling$train_set(i)
+    testingSet <- resampling$test_set(i)
     
     coordsCols <- names(landslideData) %in% c("x", "y")  
     trainingData <- landslideData[trainingSet, !coordsCols]
@@ -208,6 +223,7 @@ estimateConfidenceIntervals <- function(
     )[["initiation"]]
     
     probRasterList[[i]] <- probRaster
+    
   }
   
   # Create confidence interval rasters -----------------------------------------
@@ -220,11 +236,11 @@ estimateConfidenceIntervals <- function(
   propsRaster <- terra::rast(propRasterList)
   
   # Create confidence interval rasters
-  probConfidenceRaster <- createConfidenceIntervalRaster(probsRaster, p = 0.05)
-  propConfidenceRaster <- createConfidenceIntervalRaster(propsRaster, p = 0.05)
+  probConfidenceRaster <- createConfidenceIntervalRaster(probsRaster, p = pValue)
+  propConfidenceRaster <- createConfidenceIntervalRaster(propsRaster, p = pValue)
   
-  terra::writeRaster(probConfidenceRaster, paste0(outputDir, "/probconf.tif"))
-  terra::writeRaster(propConfidenceRaster, paste0(outputDir, "/propconf.tif"))
+  terra::writeRaster(probConfidenceRaster, paste0(outputDir, "/prob_conf.tif"))
+  terra::writeRaster(propConfidenceRaster, paste0(outputDir, "/prop_conf.tif"))
 }
 
 if (FALSE) {
@@ -236,12 +252,13 @@ if (FALSE) {
                                "E:/NetmapData/Scottsburg/pca_scott.flt"
                              ),   
     initPointsFile         = "E:/Netmapdata/Scottsburg/Scottsburg_Upslope.shp",
-    noninitRatio           = 1.5,
+    noninitRatio           = 1,
     bufferRadius           = 20,
     bufferExtractionMethod = "center cell",
     initRangeExpansion     = 0,
-    folds                  = 5,
-    repetitions            = 4,
+    repetitionsCount       = 1,
+    foldsCount             = 5,
+    pValue                 = 0.05,
     outputDir              = "E:/NetmapData"
   )
 }
