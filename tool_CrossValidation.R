@@ -112,11 +112,11 @@ performCrossValidation <- function(
   
   # Validate non-initiation ratio
   if (noninitRatio <= 0)
-    stop("Non-initiation points ratio cannot be greater than 0.")
+    stop("Non-initiation points ratio must be greater than 0.")
   
   # Validate buffer radius
   if (bufferRadius < 0)
-    stop("Buffer radius must be greatr than or equal to 0.")
+    stop("Buffer radius must be greater than or equal to 0.")
   
   # Validate buffer extraction method
   if (!(bufferExtractionMethod %in% c("all cells", "center cell", "max gradient 
