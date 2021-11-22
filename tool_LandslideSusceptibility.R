@@ -17,7 +17,7 @@
 #'                               gradient cell", or "max plan cell"
 #' @param initRangeExpansion     The relative proportion (in %) to expand each 
 #'                               variable initiation range by
-#' @param iterations             How many models to create (trained on different
+#' @param iterationsCount        How many models to create (trained on different
 #'                               sets of non-initiation sites)
 #' @param outputDir              The directory to write output files to
 #' 
@@ -35,7 +35,7 @@
 #'   bufferRadius = 20,
 #'   bufferExtractionMethod = "center cell",
 #'   initRangeExpansion = 50,
-#'   iterations = 2,
+#'   iterationsCount = 1,
 #'   outputDir = "E:/NetmapData/Scottsburg"
 #' )
 #' }
@@ -48,7 +48,7 @@ predictLandslideSusceptibility <- function(
   bufferRadius,
   bufferExtractionMethod,
   initRangeExpansion,
-  iterations,
+  iterationsCount,
   outputDir
 ) {
   
@@ -58,10 +58,10 @@ predictLandslideSusceptibility <- function(
   # directory to the folder that holds the tool's script file, so any sourced 
   # file paths must be relative to that folder.
   
-  source("./shared/createInitiationRange.R")
-  source("./shared/createAnalysisRegionMask.R")
-  source("./shared/generateNoninitiationBuffers.R")
-  source("./shared/extractBufferValues.R")
+  source("./helper/createInitiationRange.R")
+  source("./helper/createAnalysisRegionMask.R")
+  source("./helper/generateNoninitiationBuffers.R")
+  source("./helper/extractBufferValues.R")
   
   # Validate parameters --------------------------------------------------------
   
@@ -94,7 +94,7 @@ predictLandslideSusceptibility <- function(
          'max gradient cell', or 'max plan cell'.")
 
   # Validate number of iterations
-  if (iterations < 1)
+  if (iterationsCount < 1)
     stop("Iterations cannot be fewer than 1.")
   
   # Validate output directory
@@ -126,7 +126,7 @@ predictLandslideSusceptibility <- function(
   logMsg(paste0("  Buffer radius: ", bufferRadius, "\n"))
   logMsg(paste0("  Buffer extraction method: ", bufferExtractionMethod, "\n"))
   logMsg(paste0("  Initiation range expansion: ", initRangeExpansion, "%\n"))
-  logMsg(paste0("  Iterations: ", iterations, "\n"))
+  logMsg(paste0("  Iterations: ", iterationsCount, "\n"))
   logMsg(paste0("  Output directory: ", outputDir, "\n"))
   logMsg("\n")
   
@@ -204,7 +204,7 @@ predictLandslideSusceptibility <- function(
   # the analysis area
   analysisAreaVarsRaster <- terra::mask(varsRaster, analysisRegionMask)
   
-  for (i in seq_len(iterations)) {
+  for (i in seq_len(iterationsCount)) {
     ## Generate non-initiation buffers -----------------------------------------
     
     # Generate non-initiation buffers
@@ -223,6 +223,9 @@ predictLandslideSusceptibility <- function(
       noninitBuffers,
       bufferExtractionMethod
     )
+    
+    coordsCols <- names(trainingData) %in% c("x", "y")  
+    trainingData <- trainingData[,!coordsCols]
     
     # Train a new random forest model
     rfModel <- randomForest::randomForest(
@@ -279,7 +282,7 @@ predictLandslideSusceptibility <- function(
   
 }
 
-# ArcGIS script tool entrypoint
+# Entrypoint for ArcGIS script tool
 tool_exec <- function(in_params, out_params) {
   
   predictLandslideSusceptibility(
@@ -290,7 +293,7 @@ tool_exec <- function(in_params, out_params) {
     bufferRadius           = in_params[[5]],
     bufferExtractionMethod = in_params[[6]],
     initRangeExpansion     = in_params[[7]],
-    iterations             = in_params[[8]],
+    iterationsCount        = in_params[[8]],
     outputDir              = in_params[[9]]
   )
   

@@ -50,17 +50,29 @@ assessInitiationPointSusceptibility <- function(
   bufferRadius,
   bufferExtractionMethod,
   initRangeExpansion,
-  iterations,
+  iterationsCount,
   testingProportion,
   outputDir
 ) {
   
+  # Install dependencies -------------------------------------------------------
+  
+  dependencies <- c(
+    "mlr3",
+    "mlr3spatiotempcv",
+    "terra"
+  )
+  
+  install.packages(setdiff(dependencies, rownames(installed.packages())))
+  
   # Load helper functions ------------------------------------------------------
   
-  source("./shared/createInitiationRange.R")
-  source("./shared/createAnalysisRegionMask.R")
-  source("./shared/generateNoninitiationBuffers.R")
-  source("./shared/extractBufferValues.R")
+  source("./helper/createInitiationRange.R")
+  source("./helper/createAnalysisRegionMask.R")
+  source("./helper/generateNoninitiationBuffers.R")
+  source("./helper/extractBufferValues.R")
+  source("./helper/summarizeVector.R")
+  source("./helper/summarizeDataFrame.R")
   
   # Validate parameters --------------------------------------------------------
   
@@ -93,7 +105,7 @@ assessInitiationPointSusceptibility <- function(
          'max gradient cell', or 'max plan cell'.")
   
   # Validate number of iterations
-  if (iterations < 1)
+  if (iterationsCount < 1)
     stop("Iterations cannot be fewer than 1.")
   
   # Validate testing proportion
@@ -121,13 +133,14 @@ assessInitiationPointSusceptibility <- function(
   logMsg("INPUT PARAMETERS:\n")
   logMsg(paste0("  Reference raster: ", refRasterFile, "\n"))
   logMsg("  Explanatory variable rasters:\n")
-  for (i in seq_along(varRasterFiles)) { logMsg(paste0("    [", i, "] ", varRasterFiles[[i]], "\n")) }
+  for (i in seq_along(varRasterFiles)) 
+    logMsg(paste0("    [", i, "] ", varRasterFiles[[i]], "\n"))
   logMsg(paste0("  Initiation points: ", initPointsFile, "\n"))
   logMsg(paste0("  Non-initiation points ratio: ", noninitRatio, "\n"))
   logMsg(paste0("  Buffer radius: ", bufferRadius, "\n"))
   logMsg(paste0("  Buffer extraction method: ", bufferExtractionMethod, "\n"))
   logMsg(paste0("  Initiation range expansion: ", initRangeExpansion, "%\n"))
-  logMsg(paste0("  Iterations: ", iterations, "\n"))
+  logMsg(paste0("  Iterations: ", iterationsCount, "\n"))
   logMsg(paste0("  Testing proportion: ", testingProportion, "%\n"))
   logMsg(paste0("  Output directory: ", outputDir, "\n"))
   logMsg("\n")
@@ -214,8 +227,12 @@ assessInitiationPointSusceptibility <- function(
     bufferExtractionMethod
   )
   
+  coordsCols <- names(allBuffersData) %in% c("x", "y")  
+  allBuffersData <- allBuffersData[,!coordsCols]
+  
   # For each explanatory variable, draw a box plot of all the buffer values
   for (varName in names(varsRaster)) {
+    
     # get class values
     varInitValues <- allBuffersData[allBuffersData$class == "initiation", varName]
     varNoninitValues <- allBuffersData[allBuffersData$class == "non-initiation", varName]
@@ -241,6 +258,7 @@ assessInitiationPointSusceptibility <- function(
     )
     dev.copy(jpeg, paste0(outputDir, "/", varName, "_dist.jpeg"))
     dev.off()
+    
   }
   
   # Create non-initiation buffer sets ------------------------------------------
@@ -260,16 +278,16 @@ assessInitiationPointSusceptibility <- function(
   
   # Place to store iteration model error rates
   iterationsErrorRates <- data.frame(
-    rep(NA, iterations),
-    rep(NA, iterations),
-    rep(NA, iterations)
+    rep(NA, iterationsCount),
+    rep(NA, iterationsCount),
+    rep(NA, iterationsCount)
   )
   names(iterationsErrorRates) <- c("OOB", "initiation", "non-initiation")
   
   # Calculate how many initiation buffers should be used for testing per iteration
   testingInitBuffersCount <- floor(length(initBuffers) * (testingProportion / 100))
   
-  for (i in seq_len(iterations)) {
+  for (i in seq_len(iterationsCount)) {
     ## Create initiation buffer sets -------------------------------------------
     
     # Create testing initiation set
@@ -289,6 +307,9 @@ assessInitiationPointSusceptibility <- function(
       trainingNoninitBuffers,
       bufferExtractionMethod
     )
+    
+    coordsCols <- names(trainingData) %in% c("x", "y")  
+    trainingData <- trainingData[,!coordsCols]
     
     # Train a new random forest model
     rfModel <- randomForest::randomForest(
@@ -367,52 +388,25 @@ assessInitiationPointSusceptibility <- function(
   
   logMsg("SUMMARY --------------------------------------------\n\n")
   
-  # Calculate AUC summary stats
-  aucMin <- min(iterationsAucValues, na.rm = TRUE)
-  aucMax <- max(iterationsAucValues, na.rm = TRUE)
-  aucAvg <- mean(iterationsAucValues, na.rm = TRUE)
-  aucRange <- diff(c(aucMin, aucMax))
-  aucStdev <- sd(iterationsAucValues, na.rm = TRUE)
+  # Summarize AUC values
+  aucValuesSummary <- summarizeVector(iterationsAucValues)
+  rownames(aucValuesSummary) <- "AUC"
   
-  aucMatrix <- matrix(c(aucMin, aucMax, aucAvg, aucRange, aucStdev), ncol = 1)
-  aucMatrix <- t(aucMatrix)
-  colnames(aucMatrix) <- c("min", "max", "avg", "range", "stdev")
-  rownames(aucMatrix) <- "AUC"
+  # Summarize error rates
+  errorRatesSummary <- summarizeDataFrame(iterationsErrorRates)
   
-  # Log standard deviation of AUC values
-  logMsg("AUC:\n")
-  logObj(aucMatrix)
+  # Log summary of AUC values
+  logMsg("TESTING AUC:\n")
+  logObj(aucValuesSummary)
   logMsg("\n")
   
-  # Calculate error rates stats
-  errorRateMin <- as.data.frame(lapply(iterationsErrorRates, min, na.rm = TRUE))
-  errorRateMax <- as.data.frame(lapply(iterationsErrorRates, max, na.rm = TRUE))
-  errorRateAvg <- as.data.frame(lapply(iterationsErrorRates, mean, na.rm = TRUE))
-  errorRateRange <- as.data.frame(lapply(iterationsErrorRates, function(x) {
-    max(x, na.rm = TRUE) - min(x, na.rm = TRUE)
-  }))
-  errorRateStdev <- as.data.frame(lapply(iterationsErrorRates, sd, na.rm = TRUE))
-  
-  errorRateDf <- rbind(
-    errorRateMin,
-    errorRateMax,
-    errorRateAvg,
-    errorRateRange,
-    errorRateStdev
-  )
-  
-  errorRateDf <- t(errorRateDf)
-  
-  errorRateMatrix <- as.matrix(errorRateDf)
-  colnames(errorRateMatrix) <- c("min", "max", "avg", "range", "stdev")
-  
-  # Log error rates stats
-  logMsg("ERROR RATES:\n")
-  logObj(errorRateMatrix)
+  # Log summary of error rates
+  logMsg("TESTING ERROR RATES:\n")
+  logObj(errorRatesSummary)
   
 }
 
-# ArcGIS script tool entrypoint
+# Entrypoint for ArcGIS script tool
 tool_exec <- function(in_params, out_params) {
   
   assessInitiationPointSusceptibility(
@@ -423,7 +417,7 @@ tool_exec <- function(in_params, out_params) {
     bufferRadius           = in_params[[5]],
     bufferExtractionMethod = in_params[[6]],
     initRangeExpansion     = in_params[[7]],
-    iterations             = in_params[[8]],
+    iterationsCount        = in_params[[8]],
     testingProportion      = in_params[[9]],
     outputDir              = in_params[[10]]
   )
