@@ -93,6 +93,7 @@ performCrossValidation <- function(
   source("./helper/extractBufferValues.R")
   source("./helper/summarizeVector.R")
   source("./helper/summarizeDataFrame.R")
+  source("./helper/createAverageRaster.R")
   
   # Validate parameters --------------------------------------------------------
   
@@ -436,7 +437,7 @@ performCrossValidation <- function(
   if (generateAvgProbRaster) {
     # Create average probability raster
     avgProbRasterFile <- paste0(outputDir, "/", runName, "_prob.tif")
-    avgProbRaster <- createAverageRaster(probRasterFiles, avgProbRasterFile)
+    avgProbRaster <- createAverageRaster(probRasterFiles)
     
     # Save average probability raster
     terra::writeRaster(avgProbRaster, avgProbRasterFile, overwrite = TRUE)
@@ -447,7 +448,7 @@ performCrossValidation <- function(
   
 }
 
-createAverageRaster <- function(rasterFiles, filename) {
+createAverageRaster <- function(rasterFiles) {
   
   if (length(rasterFiles) == 0)
     return(NULL)
