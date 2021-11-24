@@ -5,21 +5,25 @@
 #' of each cell represents its 0.0-1.0 prediction score of matching landslide
 #' initiation conditions.
 #'
-#' @param refRasterFile          File of a raster to use as a grid reference 
+#' @param refRasterFile          File of a raster to use as a grid reference.
 #' @param varsRasterFile         List of raster files to use as explanatory 
-#'                               variables
-#' @param initPointsFile         File of initiation points
+#'                               variables.
+#' @param initPointsFile         File of initiation points.
 #' @param noninitRatio           The ratio of non-initiation sites to initiation
-#'                               sites
-#' @param bufferRadius           The radius of site buffers
+#'                               sites.
+#' @param bufferRadius           The radius of site buffers.
 #' @param bufferExtractionMethod The method to select values from site buffers. 
 #'                               Either: "all cells", "center cell", "max 
-#'                               gradient cell", or "max plan cell"
+#'                               gradient cell", or "max plan cell".
 #' @param initRangeExpansion     The relative proportion (in %) to expand each 
-#'                               variable initiation range by
-#' @param iterationsCount        How many models to create (trained on different
-#'                               sets of non-initiation sites)
-#' @param outputDir              The directory to write output files to
+#'                               variable initiation range by.
+#' @param iterationsCount        The number of probability rasters to create and 
+#'                               average together (each produced by a model 
+#'                               trained on a different set of generated 
+#'                               non-initiation sites).
+#' @runName                      Name of this run. Used to name generated output
+#'                               files.
+#' @param outputDir              The directory to write output files to.
 #' 
 #' @example
 #' \donttest{
@@ -49,6 +53,7 @@ predictLandslideSusceptibility <- function(
   bufferExtractionMethod,
   initRangeExpansion,
   iterationsCount,
+  runName,
   outputDir
 ) {
   
@@ -62,6 +67,7 @@ predictLandslideSusceptibility <- function(
   source("./helper/createAnalysisRegionMask.R")
   source("./helper/generateNoninitiationBuffers.R")
   source("./helper/extractBufferValues.R")
+  source("./helper/createAverageRaster.R")
   
   # Validate parameters --------------------------------------------------------
   
@@ -97,21 +103,25 @@ predictLandslideSusceptibility <- function(
   if (iterationsCount < 1)
     stop("Iterations cannot be fewer than 1.")
   
+  # Validate run name
+  if (nchar(runName) < 1)
+    stop("Must provide a run name")
+  
   # Validate output directory
   if (!file.exists(outputDir))
     stop("Output directory not found: '", outputDir, "'.")
   
   # Set up logging -------------------------------------------------------------
   
-  logFilename <- "landslide_susceptibility.txt"
-  file.create(paste0(outputDir, "/", logFilename))
+  logFile <- paste0(outputDir, "/", runName, "_log.txt")
+  file.create(logFile)
   
   logObj <- function(obj) {
-    capture.output(obj, file = paste0(outputDir, "/", logFilename), append = TRUE)
+    capture.output(obj, file = logFile, append = TRUE)
   }
   
   logMsg <- function(msg) {
-    cat(msg, file = paste0(outputDir, "/", logFilename), append = TRUE)
+    cat(msg, file = logFile, append = TRUE)
   }
   
   # Log parameter values
@@ -126,7 +136,8 @@ predictLandslideSusceptibility <- function(
   logMsg(paste0("  Buffer radius: ", bufferRadius, "\n"))
   logMsg(paste0("  Buffer extraction method: ", bufferExtractionMethod, "\n"))
   logMsg(paste0("  Initiation range expansion: ", initRangeExpansion, "%\n"))
-  logMsg(paste0("  Iterations: ", iterationsCount, "\n"))
+  logMsg(paste0("  # iterations: ", iterationsCount, "\n"))
+  logMsg(paste0("  Run name: ", runName, "\n"))
   logMsg(paste0("  Output directory: ", outputDir, "\n"))
   logMsg("\n")
   
@@ -195,28 +206,27 @@ predictLandslideSusceptibility <- function(
   # Determine how many to generate
   noninitBuffersCount <- ceiling(length(initPoints) * noninitRatio)
     
-  # Generate a set of initiation probability rasters ---------------------------
+  # Generate a set of probability rasters --------------------------------------
   
-  # Place to store initation probability rasters
-  initProbRasterList <- list()
+  # Vector of temporary probability raster files
+  probRasterFiles <- c()
   
   # Create a version of the variables raster that only keeps cell values within 
   # the analysis area
   analysisAreaVarsRaster <- terra::mask(varsRaster, analysisRegionMask)
   
-  for (i in seq_len(iterationsCount)) {
+  for (iterationNumber in seq_len(iterationsCount)) {
     ## Generate non-initiation buffers -----------------------------------------
     
-    # Generate non-initiation buffers
     noninitBuffers <- generateNoninitiationBuffers(
       noninitBuffersCount,
       noninitRegion,
       bufferRadius
     )
     
-    ## Create model ------------------------------------------------------------
+    ## Train model -------------------------------------------------------------
     
-    # Create training dataset
+    # Get training data
     trainingData <- extractBufferValues(
       varsRaster,
       initBuffers,
@@ -224,6 +234,7 @@ predictLandslideSusceptibility <- function(
       bufferExtractionMethod
     )
     
+    # Remove coordinates from data
     coordsCols <- names(trainingData) %in% c("x", "y")  
     trainingData <- trainingData[,!coordsCols]
     
@@ -233,52 +244,49 @@ predictLandslideSusceptibility <- function(
       data = trainingData
     )
     
-    logMsg(paste0("Model ", formatC(i, width = 2, format = "d", flag = "0"), 
-                  " ------------------------------------------------\n\n"))
+    logMsg(paste0("Model ", formatC(iterationNumber, width = 2, format = "d", 
+      flag = "0"), " ------------------------------------------------\n\n"))
     
-    logMsg("MODEL ERROR RATES:\n")
+    logMsg("TRAINING ERROR RATES:\n")
     errorRateDf <- data.frame(rfModel$err.rate[rfModel$ntree,])
     colnames(errorRateDf) <- "error rate"
     logObj(errorRateDf)
     logMsg("\n")
     
     # Log model confusion matrix
-    logMsg("MODEL CONFUSION MATRIX:\n")
+    logMsg("TRAINING CONFUSION MATRIX:\n")
     rownames(rfModel$confusion) <- c("true initiation", "true non-initiation")
     logObj(rfModel$confusion)
     logMsg("\n")
     
     ## Generate probability raster ---------------------------------------------
 
-    initProbRaster <- terra::predict(
+    probRaster <- terra::predict(
       analysisAreaVarsRaster,
       rfModel,
       na.rm = TRUE,
       type = "prob"
     )[["initiation"]]
 
-    initProbRasterList[[i]] <- initProbRaster
+    # Save the probability raster to disk
+    probRasterFile <- tempfile("prob", outputDir, ".tif")
+    terra::writeRaster(probRaster, probRasterFile)
+    
+    # Record the name of the probability raster file
+    probRasterFiles[iterationNumber] <- probRasterFile
   }
   
-  # Summarize initiation probability rasters -----------------------------------
+  # Generate average probability raster ----------------------------------------
   
-  if (length(initProbRasterList) > 1) {
-    # Combine probability rasters into a single multi-layer raster
-    initProbRaster <- terra::rast(initProbRasterList)
-
-    # Generate summary initiation probability rasters
-    avgInitProbRaster <- terra::app(initProbRaster, fun = "mean")
-    minInitProbRaster <- terra::app(initProbRaster, fun = "min")
-    maxInitProbRaster <- terra::app(initProbRaster, fun = "max")
-
-    # Save summary rasters
-    terra::writeRaster(avgInitProbRaster, paste0(outputDir, "/prob_avg.tif"), overwrite = TRUE)
-    terra::writeRaster(minInitProbRaster, paste0(outputDir, "/prob_min.tif"), overwrite = TRUE)
-    terra::writeRaster(maxInitProbRaster, paste0(outputDir, "/prob_max.tif"), overwrite = TRUE)
-  } else {
-    # Save single probability raster
-    terra::writeRaster(initProbRasterList[[1]], paste0(outputDir, "/prob.tif"), overwrite = TRUE)
-  }
+  # Create average probability raster
+  avgProbRasterFile <- paste0(outputDir, "/", runName, "_prob.tif")
+  avgProbRaster <- createAverageRaster(probRasterFiles)
+  
+  # Save average probability raster
+  terra::writeRaster(avgProbRaster, avgProbRasterFile, overwrite = TRUE)
+  
+  # Delete temporary probability raster files
+  sapply(probRasterFiles, function(file) unlink(file))
   
 }
 
@@ -294,7 +302,8 @@ tool_exec <- function(in_params, out_params) {
     bufferExtractionMethod = in_params[[6]],
     initRangeExpansion     = in_params[[7]],
     iterationsCount        = in_params[[8]],
-    outputDir              = in_params[[9]]
+    runName                = in_params[[9]],
+    outputDir              = in_params[[10]]
   )
   
   return(out_params)
