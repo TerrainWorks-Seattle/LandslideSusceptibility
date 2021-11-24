@@ -9,8 +9,8 @@
 #' @param varsRasterFile         List of raster files to use as explanatory 
 #'                               variables.
 #' @param initPointsFile         File of initiation points.
-#' @param noninitRatio           The ratio of non-initiation sites to initiation
-#'                               sites.
+#' @param noninitProportion      The proportion of non-initiation sites to 
+#'                               initiation sites.
 #' @param bufferRadius           The radius of site buffers.
 #' @param bufferExtractionMethod The method to select values from site buffers. 
 #'                               Either: "all cells", "center cell", "max 
@@ -35,11 +35,11 @@
 #'     "E:/Netmapdata/Scottsburg/pca_scott.flt"
 #'   ),
 #'   initPointsFile = "E:/NetmapData/Scottsburg/Scottsburg_Upslope.shp",
-#'   noninitRatio = 1.5,
+#'   noninitProportion = 1,
 #'   bufferRadius = 20,
 #'   bufferExtractionMethod = "center cell",
-#'   initRangeExpansion = 50,
-#'   iterationsCount = 1,
+#'   initRangeExpansion = 0,
+#'   iterationsCount = 5,
 #'   outputDir = "E:/NetmapData/Scottsburg"
 #' )
 #' }
@@ -48,7 +48,7 @@ predictLandslideSusceptibility <- function(
   refRasterFile,
   varRasterFiles,
   initPointsFile,
-  noninitRatio,
+  noninitProportion,
   bufferRadius,
   bufferExtractionMethod,
   initRangeExpansion,
@@ -85,9 +85,9 @@ predictLandslideSusceptibility <- function(
   if (!file.exists(initPointsFile))
     stop(paste0("Initiation points file not found: '", initPointsFile, "'."))
   
-  # Validate non-initiation ratio
-  if (noninitRatio <= 0)
-    stop("Non-initiation points ratio cannot be <=0.")
+  # Validate non-initiation proportion
+  if (noninitProportion <= 0)
+    stop("Non-initiation points proportion cannot be <=0.")
   
   # Validate buffer radius
   if (bufferRadius < 0)
@@ -132,7 +132,7 @@ predictLandslideSusceptibility <- function(
   for (i in seq_along(varRasterFiles))
     logMsg(paste0("    [", i, "] ", varRasterFiles[[i]], "\n"))
   logMsg(paste0("  Initiation points: ", initPointsFile, "\n"))
-  logMsg(paste0("  Non-initiation points ratio: ", noninitRatio, "\n"))
+  logMsg(paste0("  Non-initiation points proportion: ", noninitProportion, "\n"))
   logMsg(paste0("  Buffer radius: ", bufferRadius, "\n"))
   logMsg(paste0("  Buffer extraction method: ", bufferExtractionMethod, "\n"))
   logMsg(paste0("  Initiation range expansion: ", initRangeExpansion, "%\n"))
@@ -204,7 +204,7 @@ predictLandslideSusceptibility <- function(
   noninitRegion[initCellIndices] <- NA
 
   # Determine how many to generate
-  noninitBuffersCount <- ceiling(length(initPoints) * noninitRatio)
+  noninitBuffersCount <- ceiling(length(initPoints) * noninitProportion)
     
   # Generate a set of probability rasters --------------------------------------
   
@@ -297,7 +297,7 @@ tool_exec <- function(in_params, out_params) {
     refRasterFile          = in_params[[1]],
     varRasterFiles         = in_params[[2]],
     initPointsFile         = in_params[[3]],
-    noninitRatio           = in_params[[4]],
+    noninitProportion      = in_params[[4]],
     bufferRadius           = in_params[[5]],
     bufferExtractionMethod = in_params[[6]],
     initRangeExpansion     = in_params[[7]],

@@ -8,7 +8,7 @@ estimateConfidenceIntervals <- function(
   refRasterFile,
   varRasterFiles,
   initPointsFile,
-  noninitRatio,
+  noninitProportion,
   bufferRadius,
   bufferExtractionMethod,
   initRangeExpansion,
@@ -53,9 +53,9 @@ estimateConfidenceIntervals <- function(
   if (!file.exists(initPointsFile))
     stop(paste0("Initiation points file not found: '", initPointsFile, "'."))
   
-  # Validate non-initiation ratio
-  if (noninitRatio <= 0)
-    stop("Non-initiation points ratio must be greater than 0.")
+  # Validate non-initiation proportion
+  if (noninitProportion <= 0)
+    stop("Non-initiation points proportion must be greater than 0.")
   
   # Validate buffer radius
   if (bufferRadius < 0)
@@ -137,7 +137,7 @@ estimateConfidenceIntervals <- function(
   noninitRegion[initCellIndices] <- NA
   
   # Determine how many non-initiation buffers to generate
-  noninitBuffersCount <- ceiling(length(initPoints) * noninitRatio)
+  noninitBuffersCount <- ceiling(length(initPoints) * noninitProportion)
   
   # Generate non-initiation buffers
   noninitBuffers <- generateNoninitiationBuffers(
@@ -252,7 +252,7 @@ if (FALSE) {
                                "E:/NetmapData/Scottsburg/pca_scott.flt"
                              ),   
     initPointsFile         = "E:/Netmapdata/Scottsburg/Scottsburg_Upslope.shp",
-    noninitRatio           = 1,
+    noninitProportion      = 1,
     bufferRadius           = 20,
     bufferExtractionMethod = "center cell",
     initRangeExpansion     = 0,

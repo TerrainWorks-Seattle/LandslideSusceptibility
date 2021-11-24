@@ -4,20 +4,13 @@
 #' different sets of generated non-initiation points. Outputs an average 
 #' landslide susceptibility raster and a log file that records and summarizes 
 #' model performance.
-#' 
-#' The process:
-#' 1. Use initiation buffers to define an analysis region
-#' 2. Generate a set of non-initiation buffers in the analysis region
-#' 3. Extract landslide dataset from all buffers
-#' 4. Perform repeated k-fold spatial cross-validation on dataset
-#' 5. Repeat from step 2 a given number of times 
 #'
 #' @param refRasterFile          A raster file to use as a grid reference.
 #' @param varRasterFiles         A list of raster files to use as explanatory 
 #'                               variables.
 #' @param initPointsFile         A shapefile of initiation points.
-#' @param noninitRatio           The ratio of non-initiation sites to initiation
-#'                               sites.
+#' @param noninitProportion      The proportion of non-initiation sites to 
+#'                               initiation sites.
 #' @param bufferRadius           The radius of site buffers.
 #' @param bufferExtractionMethod The method used to select values from site 
 #'                               buffers for training/testing. Either: 
@@ -46,7 +39,7 @@
 #'     "E:/NetmapData/Scottsburg/plan_30.tif"
 #'   ),
 #'   initPointsFile         = "E:/NetmapData/Scottsburg/Scottsburg_Upslope.shp",
-#'   noninitRatio           = 1,
+#'   noninitProportion      = 1,
 #'   bufferRadius           = 20,
 #'   bufferExtractionMethod = "center cell",
 #'   initRangeExpansion     = 0,
@@ -63,7 +56,7 @@ performCrossValidation <- function(
   refRasterFile,
   varRasterFiles,
   initPointsFile,
-  noninitRatio,
+  noninitProportion,
   bufferRadius,
   bufferExtractionMethod,
   initRangeExpansion,
@@ -111,9 +104,9 @@ performCrossValidation <- function(
   if (!file.exists(initPointsFile))
     stop(paste0("Initiation points file not found: '", initPointsFile, "'."))
   
-  # Validate non-initiation ratio
-  if (noninitRatio <= 0)
-    stop("Non-initiation points ratio must be greater than 0.")
+  # Validate non-initiation proportion
+  if (noninitProportion <= 0)
+    stop("Non-initiation points proportion must be greater than 0.")
   
   # Validate buffer radius
   if (bufferRadius < 0)
@@ -163,7 +156,7 @@ performCrossValidation <- function(
   for (i in seq_along(varRasterFiles)) 
     logMsg(paste0("    [", i, "] ", varRasterFiles[[i]], "\n"))
   logMsg(paste0("  Initiation points: ", initPointsFile, "\n"))
-  logMsg(paste0("  Non-initiation points ratio: ", noninitRatio, "\n"))
+  logMsg(paste0("  Non-initiation points proportion: ", noninitProportion, "\n"))
   logMsg(paste0("  Buffer radius: ", bufferRadius, "\n"))
   logMsg(paste0("  Buffer extraction method: ", bufferExtractionMethod, "\n"))
   logMsg(paste0("  Initiation range expansion: ", initRangeExpansion, "%\n"))
@@ -231,7 +224,7 @@ performCrossValidation <- function(
   noninitRegion[initCellIndices] <- NA
   
   # Determine how many non-initiation buffers to generate
-  noninitBuffersCount <- ceiling(length(initPoints) * noninitRatio)
+  noninitBuffersCount <- ceiling(length(initPoints) * noninitProportion)
   
   # Perform cross-validation using different sets of non-initiation buffers ----
   
@@ -455,7 +448,7 @@ tool_exec <- function(in_params, out_params) {
     refRasterFile          = in_params[[1]],
     varRasterFiles         = in_params[[2]],
     initPointsFile         = in_params[[3]],
-    noninitRatio           = in_params[[4]],
+    noninitProportion      = in_params[[4]],
     bufferRadius           = in_params[[5]],
     bufferExtractionMethod = in_params[[6]],
     initRangeExpansion     = in_params[[7]],
