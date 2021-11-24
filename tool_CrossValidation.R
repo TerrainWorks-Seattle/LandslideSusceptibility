@@ -328,7 +328,7 @@ performCrossValidation <- function(
       )
       
       logMsg(paste0("Model ", formatC(iterationNumber, width = 3, format = "d", 
-        flag = "0"), " ------------------------------------------------\n\n"))
+                                      flag = "0"), " ------------------------------------------------\n\n"))
       
       # Log model error rates
       logMsg("TRAINING ERROR RATES:\n")
@@ -445,23 +445,6 @@ performCrossValidation <- function(
     # Delete temporary probability raster files
     sapply(probRasterFiles, function(file) unlink(file))
   }
-  
-}
-
-createAverageRaster <- function(rasterFiles) {
-  
-  if (length(rasterFiles) == 0)
-    return(NULL)
-  
-  sumRaster <- terra::rast(rasterFiles[1])
-  if (length(rasterFiles) > 1) {
-    for (i in 2:length(rasterFiles)) {
-      sumRaster <- sumRaster + terra::rast(rasterFiles[i])
-    }
-  }
-  avgRaster <- sumRaster / length(rasterFiles)
-    
-  return(avgRaster)
   
 }
 
