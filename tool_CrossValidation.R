@@ -33,7 +33,7 @@
 #'                               validation.
 #' @param generateAvgProbRaster  Should an average probability raster be 
 #'                               generated?
-#' @runName                      Name of this run. Used to name generated output
+#' @param runName                Name of this run. Used to name generated output
 #'                               files.
 #' @param outputDir              The directory to write output files to.
 #' 
