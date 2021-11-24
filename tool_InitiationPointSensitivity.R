@@ -5,22 +5,24 @@
 #' random subsets of initiation sites. Outputs a distribution plot of site 
 #' values for each variable and a log file that records model accuracy. 
 #'
-#' @param refRasterFile          File of a raster to use as a grid reference 
+#' @param refRasterFile          File of a raster to use as a grid reference. 
 #' @param varsRasterFile         List of raster files to use as explanatory 
-#'                               variables
-#' @param initPointsFile         File of initiation points
+#'                               variables.
+#' @param initPointsFile         File of initiation points.
 #' @param noninitRatio           The ratio of non-initiation sites to initiation
-#'                               sites
-#' @param bufferRadius           The radius of site buffers
+#'                               sites.
+#' @param bufferRadius           The radius of site buffers.
 #' @param bufferExtractionMethod The method to select values from site buffers. 
 #'                               Either: "all cells", "center cell", "max 
-#'                               gradient cell", or "max plan cell"
+#'                               gradient cell", or "max plan cell".
 #' @param initRangeExpansion     The relative proportion (in %) to expand each 
-#'                               variable initiation range by
-#' @param iterations             How many models to create
+#'                               variable initiation range by.
+#' @param iterations             How many models to create.
 #' @param testingProportion      The proportion (in %) of initiation and
-#'                               non-initiation sites to withhold for testing
-#' @param outputDir              The directory to write output files to
+#'                               non-initiation sites to withhold for testing.
+#' @param runName                Name of this run. Used to name generated output
+#'                               files.
+#' @param outputDir              The directory to write output files to.
 #' 
 #' @example
 #' \donttest{
@@ -38,6 +40,7 @@
 #'   initRangeExpansion = 10,
 #'   iterations = 20,
 #'   testingProportion = 10,
+#'   runName = "scott_ips",
 #'   outputDir = "E:/NetmapData/Scottsburg"
 #' )
 #' }
@@ -52,6 +55,7 @@ assessInitiationPointSusceptibility <- function(
   initRangeExpansion,
   iterationsCount,
   testingProportion,
+  runName,
   outputDir
 ) {
   
@@ -112,22 +116,21 @@ assessInitiationPointSusceptibility <- function(
   if (testingProportion <= 0 || testingProportion >= 100)
     stop("Testing proportion must be between 0% and 100%.")
   
+  # Validate run name
+  if (nchar(runName) < 1)
+    stop("Must provide a run name")
+  
   # Validate output directory
   if (!file.exists(outputDir))
     stop("Output directory not found: '", outputDir, "'.")
   
   # Set up logging -------------------------------------------------------------
   
-  logFilename <- "initiation_sensitivity.txt"
-  file.create(paste0(outputDir, "/", logFilename))
+  logFile <- paste0(outputDir, "/", runName, "_log.txt")
+  file.create(logFile)
   
-  logObj <- function(obj) {
-    capture.output(obj, file = paste0(outputDir, "/", logFilename), append = TRUE)
-  }
-  
-  logMsg <- function(msg) {
-    cat(msg, file = paste0(outputDir, "/", logFilename), append = TRUE)
-  }
+  logMsg <- function(msg) cat(msg, file = logFile, append = TRUE)
+  logObj <- function(obj) capture.output(obj, file = logFile, append = TRUE)
   
   # Log input parameters
   logMsg("INPUT PARAMETERS:\n")
@@ -142,6 +145,7 @@ assessInitiationPointSusceptibility <- function(
   logMsg(paste0("  Initiation range expansion: ", initRangeExpansion, "%\n"))
   logMsg(paste0("  Iterations: ", iterationsCount, "\n"))
   logMsg(paste0("  Testing proportion: ", testingProportion, "%\n"))
+  logMsg(paste0("  Run name: ", runName, "\n"))
   logMsg(paste0("  Output directory: ", outputDir, "\n"))
   logMsg("\n")
   
@@ -277,14 +281,14 @@ assessInitiationPointSusceptibility <- function(
                   " ------------------------------------------------\n\n"))
     
     # Log model error rates
-    logMsg("MODEL ERROR RATES:\n")
+    logMsg("TRAINING ERROR RATES:\n")
     errorRateDf <- data.frame(rfModel$err.rate[rfModel$ntree,])
     colnames(errorRateDf) <- "error rate"
     logObj(errorRateDf)
     logMsg("\n")
     
     # Log model confusion matrix
-    logMsg("MODEL CONFUSION MATRIX:\n")
+    logMsg("TRAINING CONFUSION MATRIX:\n")
     rownames(rfModel$confusion) <- c("true initiation", "true non-initiation")
     logObj(rfModel$confusion)
     logMsg("\n")
@@ -375,7 +379,8 @@ tool_exec <- function(in_params, out_params) {
     initRangeExpansion     = in_params[[7]],
     iterationsCount        = in_params[[8]],
     testingProportion      = in_params[[9]],
-    outputDir              = in_params[[10]]
+    runName                = in_params[[10]],
+    outputDir              = in_params[[11]]
   )
   
   return(out_params)
