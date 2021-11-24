@@ -217,50 +217,6 @@ assessInitiationPointSusceptibility <- function(
     bufferRadius
   )
   
-  # Plot variable distributions ------------------------------------------------
-  
-  # Get requested values from all initiation and non-initiation buffers
-  allBuffersData <- extractBufferValues(
-    varsRaster,
-    initBuffers,
-    noninitBuffers,
-    bufferExtractionMethod
-  )
-  
-  coordsCols <- names(allBuffersData) %in% c("x", "y")  
-  allBuffersData <- allBuffersData[,!coordsCols]
-  
-  # For each explanatory variable, draw a box plot of all the buffer values
-  for (varName in names(varsRaster)) {
-    
-    # get class values
-    varInitValues <- allBuffersData[allBuffersData$class == "initiation", varName]
-    varNoninitValues <- allBuffersData[allBuffersData$class == "non-initiation", varName]
-    
-    # Calculate class averages
-    varInitAvg <- mean(varInitValues, na.rm = TRUE)
-    varNoninitAvg <- mean(varNoninitValues, na.rm = TRUE)
-    
-    # Save plot as an image file
-    dev.new()
-    boxplot(
-      varInitValues, varNoninitValues,
-      main = paste0(varName, " distribution"),
-      names = c("Initiation", "Non-initiation"),
-      col = c("green", "red")
-    )
-    points(
-      x = 1:2,
-      y = c(varInitAvg, varNoninitAvg),
-      pch = 16,
-      cex = 2,
-      col = "black"
-    )
-    dev.copy(jpeg, paste0(outputDir, "/", varName, "_dist.jpeg"))
-    dev.off()
-    
-  }
-  
   # Create non-initiation buffer sets ------------------------------------------
   
   # Create a static set of training and testing non-initiation buffers to use every iteration
