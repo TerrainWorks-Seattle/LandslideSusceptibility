@@ -19,9 +19,6 @@ createProportionRaster <- function(
   outputFile
 ) {
   
-  print(probRasterFile)
-  print(outputFile)
-  
   # Install dependencies -------------------------------------------------------
   
   dependencies <- c("terra")
