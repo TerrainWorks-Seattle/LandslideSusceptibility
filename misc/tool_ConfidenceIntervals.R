@@ -2,7 +2,47 @@
 #' 
 #' @description Generates a confidence interval raster from a series of 
 #' landslide initiation probability rasters. These are produced by models 
-#' created 
+#' created
+#' 
+#' @param refRasterFile          A raster file to use as a grid reference.
+#' @param varRasterFiles         A list of raster files to use as explanatory 
+#'                               variables.
+#' @param initPointsFile         A shapefile of initiation points.
+#' @param noninitProportion      The proportion of non-initiation sites to 
+#'                               initiation sites.
+#' @param bufferRadius           The radius of site buffers.
+#' @param bufferExtractionMethod The method used to select values from site 
+#'                               buffers for training/testing. Either: 
+#'                               "all cells", "center cell", 
+#'                               "max gradient cell", or "max plan cell".
+#' @param initRangeExpansion     The proportion (in %) to expand the initiation 
+#'                               range of each variable by.
+#' @param repetitionsCount       The number of times to repeat k-fold cross-
+#'                               validation.
+#' @param foldsCount             The number of folds to use for k-fold cross-
+#'                               validation.
+#' @param pValue                 P-value of confidence intervals.
+#' @param outputDir              The directory to write output files to.
+#' 
+#' @example
+#' \dontest{
+#' estimateConfidenceIntervals(
+#'   refRasterFile          = "E:/NetmapData/Scottsburg/elev_scottsburg.flt",
+#'   varRasterFiles         = list(
+#'     "E:/NetmapData/Scottsburg/grad_30.tif",
+#'     "E:/NetmapData/Scottsburg/plan_30.tif"
+#'   ),   
+#'   initPointsFile         = "E:/Netmapdata/Scottsburg/Scottsburg_Upslope.shp",
+#'   noninitProportion      = 1,
+#'   bufferRadius           = 20,
+#'   bufferExtractionMethod = "center cell",
+#'   initRangeExpansion     = 0,
+#'   repetitionsCount       = 1,
+#'   foldsCount             = 5,
+#'   pValue                 = 0.05,
+#'   outputDir              = "E:/NetmapData/Scottsburg"
+#' )
+#' }
 
 estimateConfidenceIntervals <- function(
   refRasterFile,
@@ -124,9 +164,9 @@ estimateConfidenceIntervals <- function(
   
   # Define the region where non-initiation points can be generated
   
-  # NOTE: initiation buffers and non-initiation buffers must not overlap. This can
-  # be avoided by making sure each non-initiation point is generated at least 2 
-  # buffer-radius-lengths away from any initiation point 
+  # NOTE: initiation buffers and non-initiation buffers must not overlap. This 
+  # can be avoided by making sure each non-initiation point is generated at 
+  # least 2 buffer-radius-lengths away from any initiation point 
   
   # Double the size of the initiation buffers
   expInitBuffers <- terra::buffer(initPoints, width = bufferRadius * 2)
@@ -146,7 +186,7 @@ estimateConfidenceIntervals <- function(
     bufferRadius
   )
   
-  # Plot variable distributions ------------------------------------------------
+  # Create cross-validation sets -----------------------------------------------
   
   # Get requested values from all initiation and non-initiation buffers
   landslideData <- extractBufferValues(
@@ -155,8 +195,6 @@ estimateConfidenceIntervals <- function(
     noninitBuffers,
     bufferExtractionMethod
   )
-  
-  # Create cross-validation sets ----------------------------------------------
   
   # Set up a machine learning task for the landslide data
   task <- mlr3spatiotempcv::TaskClassifST$new(
@@ -201,6 +239,7 @@ estimateConfidenceIntervals <- function(
     trainingSet <- resampling$train_set(i)
     testingSet <- resampling$test_set(i)
     
+    # Remove coordinates from dataset
     coordsCols <- names(landslideData) %in% c("x", "y")  
     trainingData <- landslideData[trainingSet, !coordsCols]
     testingData <- landslideData[testingSet, !coordsCols]
@@ -236,29 +275,10 @@ estimateConfidenceIntervals <- function(
   propsRaster <- terra::rast(propRasterList)
   
   # Create confidence interval rasters
-  probConfidenceRaster <- createConfidenceIntervalRaster(probsRaster, p = pValue)
-  propConfidenceRaster <- createConfidenceIntervalRaster(propsRaster, p = pValue)
+  probConfRaster <- createConfidenceIntervalRaster(probsRaster, p = pValue)
+  propConfRaster <- createConfidenceIntervalRaster(propsRaster, p = pValue)
   
-  terra::writeRaster(probConfidenceRaster, paste0(outputDir, "/prob_conf.tif"))
-  terra::writeRaster(propConfidenceRaster, paste0(outputDir, "/prop_conf.tif"))
-}
-
-if (FALSE) {
-  estimateConfidenceIntervals(
-    refRasterFile          = "E:/NetmapData/Scottsburg/elev_scottsburg.flt",
-    varRasterFiles         = list(
-                               "E:/NetmapData/Scottsburg/grad_30.tif",
-                               "E:/NetmapData/Scottsburg/plan_30.tif",
-                               "E:/NetmapData/Scottsburg/pca_scott.flt"
-                             ),   
-    initPointsFile         = "E:/Netmapdata/Scottsburg/Scottsburg_Upslope.shp",
-    noninitProportion      = 1,
-    bufferRadius           = 20,
-    bufferExtractionMethod = "center cell",
-    initRangeExpansion     = 0,
-    repetitionsCount       = 1,
-    foldsCount             = 5,
-    pValue                 = 0.05,
-    outputDir              = "E:/NetmapData"
-  )
+  # Save confidence interval rasters
+  terra::writeRaster(probConfRaster, paste0(outputDir, "/prob_conf.tif"), overwrite = TRUE)
+  terra::writeRaster(propConfRaster, paste0(outputDir, "/prop_conf.tif"), overwrite = TRUE)
 }
