@@ -8,14 +8,14 @@ susceptibility.
 1. First, make sure you have R installed. Follow instructions [here](https://www.r-project.org/) to install the latest version. 
 1. Download this repository to your computer. There are two options 
 for how to do this: 
-  1. Via git (you must first have git installed and set up on your machine):
-    ```
-    git clone https://github.com/TerrainWorks-Seattle/LandslideSusceptibility.git
-    ```
-  1. Download a zip file of all code
-    1. Click on the green button "Code"
-    1. Select "Download ZIP"
-    1. Download to an appropriate location and unzip
+    1. Via git (you must first have git installed and set up on your machine):
+        ```
+        git clone https://github.com/TerrainWorks-Seattle/LandslideSusceptibility.git
+        ```
+    1. Download a zip file of all code
+        1. Click on the green button "Code"
+        1. Select "Download ZIP"
+        1. Download to an appropriate location and unzip
 1. To run the toolbox in ArcGIS Pro you must install R-ArcGIS bridge (instructions [here](https://github.com/R-ArcGIS/R-Bridge-Tutorial-Notebooks/blob/master/notebooks/01-basics/R-bridge-install-and-setup.ipynb))
 1. You will also need to download the DEMutilities scripts to calculate surface metrics used as model inputs. These are part of the ForestedWetlands repository. Follow the instructions in [WetlandTools_for_ArcGIS.pdf](https://github.com/TerrainWorks-Seattle/ForestedWetlands/blob/master/WetlandTools_for_ArcGIS.pdf) to download and run the DEMutilities toolbox in ArcGIS. 
 
