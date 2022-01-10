@@ -94,8 +94,10 @@ predictLandslideSusceptibility <- function(
     stop("Buffer radius cannot be negative.")
   
   # Validate buffer extraction method
-  if (!(bufferExtractionMethod %in% c("all cells", "center cell", "max gradient 
-        cell", "max plan cell")))
+  if (!(bufferExtractionMethod %in% c("all cells", 
+                                      "center cell", 
+                                      "max gradient cell", 
+                                      "max plan cell")))
     stop("Buffer extraction method must be one of 'all cells', 'center cell', 
          'max gradient cell', or 'max plan cell'.")
 
