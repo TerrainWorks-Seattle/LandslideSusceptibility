@@ -261,6 +261,10 @@ predictLandslideSusceptibility <- function(
     logObj(rfModel$confusion)
     logMsg("\n")
     
+    logMsg("TRAINING VARIABLE IMPORTANCE:\n")
+    logObj(rfModel$importance)
+    logMsg("\n")
+    
     ## Generate probability raster ---------------------------------------------
 
     probRaster <- terra::predict(

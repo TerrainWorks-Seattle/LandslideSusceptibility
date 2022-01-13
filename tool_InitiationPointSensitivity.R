@@ -293,6 +293,11 @@ assessInitiationPointSusceptibility <- function(
     logObj(rfModel$confusion)
     logMsg("\n")
     
+    
+    logMsg("TRAINING VARIABLE IMPORTANCE:\n")
+    logObj(rfModel$importance)
+    logMsg("\n")
+    
     ## Run model on testing data -----------------------------------------------
     
     # Creating testing data
