@@ -24,6 +24,8 @@
 #'                               validation.
 #' @param foldsCount             The number of folds to use for k-fold cross-
 #'                               validation.
+#' @param generateProbRasters    Should a probability raster be generated for 
+#'                               each model?
 #' @param generateAvgProbRaster  Should an average probability raster be 
 #'                               generated?
 #' @param runName                Name of this run. Used to name generated output
@@ -46,7 +48,8 @@
 #'   noninitSetsCount       = 1, 
 #'   repetitionsCount       = 1,
 #'   foldsCount             = 4,
-#'   generateAvgProbRaster  = FALSE,
+#'   generateProbRasters    = FALSE,
+#'   generateAvgProbRaster  = TRUE,
 #'   runName                = "scott_cv",
 #'   outputDir              = "E:/NetmapData/Scottsburg"
 #' )
@@ -63,6 +66,7 @@ performCrossValidation <- function(
   noninitSetsCount,
   repetitionsCount,
   foldsCount,
+  generateProbRasters,
   generateAvgProbRaster,
   runName,
   outputDir
@@ -129,6 +133,9 @@ performCrossValidation <- function(
   # Validate number of folds
   if (foldsCount < 2)
     stop("Folds must be greater than 1.")
+  
+  if (!is.logical(generateProbRasters))
+    generateProbRasters <- FALSE
   
   if (!is.logical(generateAvgProbRaster))
     generateAvgProbRaster <- FALSE
@@ -230,6 +237,7 @@ performCrossValidation <- function(
   
   # Total number of iterations
   iterationsCount <- noninitSetsCount * foldsCount * repetitionsCount
+  iterationsCountDigits <- floor(log10(iterationsCount)) + 1
   
   # Place to store model auc value for each iteration
   iterationsAucValues <- c()
@@ -242,7 +250,7 @@ performCrossValidation <- function(
   )
   names(iterationsErrorRates) <- c("OOB", "initiation", "non-initiation")
   
-  if (generateAvgProbRaster) {
+  if (generateProbRasters || generateAvgProbRaster) {
     # Create a version of the variables raster that only keeps cells within the 
     # analysis region
     analysisRegionVarsRaster <- terra::mask(varsRaster, analysisRegionMask)
@@ -321,7 +329,7 @@ performCrossValidation <- function(
       )
       
       logMsg(paste0("Model ", formatC(iterationNumber, width = 3, format = "d", 
-                                      flag = "0"), " ------------------------------------------------\n\n"))
+        flag = "0"), " ------------------------------------------------\n\n"))
       
       # Log model error rates
       logMsg("TRAINING ERROR RATES:\n")
@@ -381,7 +389,7 @@ performCrossValidation <- function(
       
       ## Generate probability raster -------------------------------------------
       
-      if (generateAvgProbRaster) {
+      if (generateProbRasters || generateAvgProbRaster) {
         # Have the model predict an initiation probability raster
         probRaster <- terra::predict(
           analysisRegionVarsRaster,
@@ -391,7 +399,13 @@ performCrossValidation <- function(
         )[["initiation"]]
         
         # Save the probability raster to disk
-        probRasterFile <- tempfile("prob", outputDir, ".tif")
+        paddedIterationNumber <- formatC(
+          iterationNumber,
+          width = iterationsCountDigits,
+          format = "d",
+          flag = "0"
+        )
+        probRasterFile <- paste0(outputDir, "/", runName, "_prob", paddedIterationNumber, ".tif")
         terra::writeRaster(probRaster, probRasterFile)
         
         # Record the name of the probability raster file
@@ -426,17 +440,19 @@ performCrossValidation <- function(
   logMsg("\n")
   
   # Generate average probability raster ----------------------------------------
-  
+    
   if (generateAvgProbRaster) {
-    # Create average probability raster
-    avgProbRasterFile <- paste0(outputDir, "/", runName, "_prob.tif")
+    # Generate average probability raster
+    avgProbRasterFile <- paste0(outputDir, "/", runName, "_avgprob.tif")
     avgProbRaster <- createAverageRaster(probRasterFiles)
     
     # Save average probability raster
     terra::writeRaster(avgProbRaster, avgProbRasterFile, overwrite = TRUE)
     
-    # Delete temporary probability raster files
-    sapply(probRasterFiles, function(file) unlink(file))
+    if (!generateProbRasters) {
+      # Delete temporary probability raster files
+      sapply(probRasterFiles, function(file) unlink(file))
+    }
   }
   
 }
@@ -455,9 +471,10 @@ tool_exec <- function(in_params, out_params) {
     noninitSetsCount       = in_params[[8]],
     repetitionsCount       = in_params[[9]],
     foldsCount             = in_params[[10]],
-    generateAvgProbRaster  = in_params[[11]], 
-    runName                = in_params[[12]],
-    outputDir              = in_params[[13]]
+    generateProbRasters    = in_params[[11]],
+    generateAvgProbRaster  = in_params[[12]],
+    runName                = in_params[[13]],
+    outputDir              = in_params[[14]]
   )
   
   return(out_params)
