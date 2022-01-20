@@ -1,0 +1,419 @@
+---
+title: "Landslide Susceptibility (Scottsburg)"
+output: html_document
+params: 
+  input_rasters: 
+    value: !r c("dev_15.tif", "prof_15.tif", "grad_15.tif", "plan_15.tif", "pca_15m_48hr.flt", "pca_15m_5hr.flt")
+    choices: !r list.files("E:/NetmapData/Scottsburg")
+    input: select
+    multiple: TRUE
+  shade_file: 
+    value: "shade_scottsburg.tif"
+    choices: !r list.files("E:/NetmapData/Scottsburg")
+    input: select
+  init_points_file: 
+    value: "Scottsburg_Upslope.shp"
+    choices: !r list.files("E:/NetmapData/Scottsburg")
+    input: select
+  noninit_proportion: 1
+  buffer_radius: 15
+  buffer_extraction: 
+    value: "center cell"
+    choices: 
+      - "center cell"
+      - "max gradient cell"
+      - "max plan cell"
+  init_range_expansion: 200
+  iterations_count: 5
+---
+
+Building random forest models using inputs derived from a DEM and a set of landslide initiation points to predict which areas are more susceptible to landslides. 
+
+```{r setup}
+library(terra)
+library(TerrainWorksUtils)
+library(randomForest)
+library(here)
+library(ggmap)
+for (file in list.files(here("helper"))) {
+  source(here("helper", file))
+}
+
+dataDir <- "E:/NetmapData/Scottsburg"
+shade_file <- file.path(dataDir, params$shade_file)
+varRasterFiles <- lapply(params$input_rasters, function(x) {
+  file.path(dataDir, x)
+})
+initPointsFile = file.path(dataDir, params$init_points_file)
+noninitProportion = params$noninit_proportion
+bufferRadius = params$buffer_radius
+bufferExtractionMethod = params$buffer_extraction
+initRangeExpansion = params$init_range_expansion
+iterationsCount = params$iterations_count
+```
+
+## Inputs
+__shade_file__: `r shade_file`  
+__varRasterFiles__: `r varRasterFiles`  
+__initPOintsFile__: `r initPointsFile`  
+__noninitProportion__: `r noninitProportion`  
+__bufferRadius__: `r bufferRadius`  
+__bufferExtractionMethod__: `r bufferExtractionMethod`  
+__initRangeExpansion__: `r initRangeExpansion`  
+__iterationsCount__: `r iterationsCount`  
+
+
+## The Data
+Required inputs: DEM for a region and a set of landslide initiation points. For this exploration, we are using the Scottsburg dataset, which was collected near Scottsburg, OR, including a DEM of the region and 74 landslide initiation points collected in the field.  
+
+
+```{r plot-data}
+# get background map
+terrain <- terra::rast(
+  ggmap::get_map(c(-123.90, 43.5978, -123.80, 43.66), 
+                 source = "osm", 
+                 messaging = FALSE))
+
+# Get hillshade 
+shade <- terra::rast(file.path(dataDir, "shade_scottsburg.tif"))
+
+# Get points
+initPoints <- terra::vect(initPointsFile)
+
+# Match projections
+terrain <- terra::project(terrain, crs(shade))
+
+
+plotRGB(terrain)
+plot(shade, col=grey(0:100/100), legend = FALSE, add= TRUE)
+points(initPoints, cex = 2, col = "#c44a41")
+```
+
+## Model inputs
+
+Surface metrics are calculated from the DEM using the DEMutilities toolbox from the [ForestedWetlands](https://github.com/TerrainWorks-Seattle/ForestedWetlands) repo. Here, we use gradient, plan curvature, profile curvature, and elevation deviation at the 15 meter scale, and partial contributing area at the 15-meter scale calculated for a 5 hour and 48 hour period. This gives us an 6 input rasters. 
+
+We also need a set of non-initiation training points. To derive a set of meaningful non-initation points, we first exclude all points outside of the range of values where landslides can be found based on the range of input values for all landslide initation points. This gives us our "analysis region."  
+
+```{r load-input-rasters}
+varRasterList <- lapply(varRasterFiles, function(file) terra::rast(file))
+
+# Align variable rasters
+varRasterList <- TerrainWorksUtils::alignRasters(shade, varRasterList)
+
+# Combine variable rasters into a single multi-layer raster
+varsRaster <- terra::rast(varRasterList)
+```
+
+```{r create-analysis-region}
+initBuffers <- terra::buffer(initPoints, width = bufferRadius)
+
+# Calculate initiation range for each variable
+initRange <- createInitiationRange(
+  varsRaster,
+  initBuffers,
+  initRangeExpansion
+)
+initRange
+
+# Identify cells in the study region that have variable values within their 
+# initiation ranges
+initRaster <- terra::copy(varsRaster)
+for (varName in names(initRaster)) {
+  varRaster <- initRaster[[varName]]
+  
+  # Get variable value limits
+  minInitValue <- initRange[varName, "min"]
+  maxInitValue <- initRange[varName, "max"]
+  
+  # NA-out cells with values outside variable initiation range
+  varInitRaster <- terra::app(varRaster, function(x) {
+    ifelse(x < minInitValue | x > maxInitValue, NA, x)
+  })
+  
+  # Update the raster in the input raster stack
+  initRaster[[varName]] <- varInitRaster
+}
+
+# NA-out cells with ANY variable value outside its initiation range
+analysisRegionMask <- all(initRaster)
+# 
+```
+
+When creating the analysis region, dev_15 (elevation deviation from the mean) has the least overlap from all the other predictors. We need to set a high value for the initRangeExpansion value or else most points will be removed. Here, we expanded the initiation range by `r params$init_range_expansion` percent. The map below is colored by the number of variables which are within the initation range. Only the orange cells are included in the analysis region. 
+
+```{r}
+analysisCountRaster <- terra::app(initRaster, 
+                                  function(x) sum(!is.na(x)))
+plot(analysisCountRaster, 
+     col = c(RColorBrewer::brewer.pal( 
+       length(unique(values(analysisCountRaster)))-1, 
+       "YlGnBu"),
+       "#eb972a"
+     ), 
+     axes = FALSE) 
+```
+
+We then draw a buffer around initiation points and randomly sample non-initiation points from the remaining analysis region.
+
+```{r create-initation-points}
+# Double the size of the initiation buffers
+expInitBuffers <- terra::buffer(initPoints, 
+                                width = bufferRadius * 2)
+
+# Remove expanded initiation buffers from the viable non-initiation region
+noninitRegion <- terra::copy(analysisRegionMask)
+initCellIndices <- terra::extract(noninitRegion, 
+                                  expInitBuffers, 
+                                  cells = TRUE)$cell
+noninitRegion[initCellIndices] <- NA
+
+# Determine how many to generate
+noninitBuffersCount <- ceiling(length(initPoints) * noninitProportion)
+
+noninitBuffers <- generateNoninitiationBuffers(
+  noninitBuffersCount,
+  noninitRegion,
+  bufferRadius
+)
+```
+
+```{r plot-init}
+plotRGB(terrain)
+plot(shade, col=grey(0:100/100), legend = FALSE, add= TRUE)
+plot(analysisRegionMask, add = TRUE, col = "#377eb8")
+points(initBuffers, col = "#fb8072")
+points(noninitBuffers, col = "#a6d854")
+legend("topright", 
+       legend = c("Analysis Region", 
+                  "Initiation Points", 
+                  "Non-initation Points"), 
+       fill = c("#377eb8", NA, NA), 
+       border = c(1, "transparent", "transparent"),
+       col = c(NA, "#fb8072", "#a6d854"), 
+       pch = c(NA, 16, 16), 
+       pt.cex = c(1, 2, 2)
+)
+```
+
+After generating the non-initiation points, we can extract input values from the rasters to create our training data. 
+
+```{r input-variables}
+# Get training data
+trainingData <- extractBufferValues(
+  varsRaster,
+  initBuffers,
+  noninitBuffers,
+  bufferExtractionMethod
+)
+
+# Remove coordinates from data
+coordsCols <- names(trainingData) %in% c("x", "y")  
+trainingData <- trainingData[,!coordsCols]
+trainingData_no_y <- trainingData[, !grepl("class", names(trainingData))]
+
+cor(trainingData_no_y[trainingData$class == "initiation",])
+cor(trainingData_no_y[trainingData$class == "non-initiation",])
+panel.hist <- function(x, ...) {
+    usr <- par("usr")
+    on.exit(par(usr))
+    par(usr = c(usr[1:2], 0, 1.5))
+    his <- hist(x, plot = FALSE)
+    breaks <- his$breaks
+    nB <- length(breaks)
+    y <- his$counts
+    y <- y/max(y)
+    rect(breaks[-nB], 0, breaks[-1], y, ...)
+    # lines(density(x), col = 2, lwd = 2) # Uncomment to add density lines
+}
+pairs(trainingData_no_y[trainingData$class == "initiation",], 
+      upper.panel = NULL, 
+      diag.panel = panel.hist, 
+      main = "Initation points")
+pairs(trainingData_no_y[trainingData$class == "non-initiation",], 
+      upper.panel = NULL, 
+      diag.panel = panel.hist, 
+      main = "Non-initation points")
+pairs(trainingData_no_y, 
+      upper.panel = NULL, 
+      diag.panel = panel.hist, 
+      main = "All points", 
+      col = ifelse(trainingData$class == "initiation", 1, 2))
+legend("topright", 
+       legend = c("initiation", "non-initiation"), 
+       pch = 1, 
+       col = c(1, 2))
+```
+
+## Random forest model
+
+Next, we fit a random forest model on the training data, and examine some model stats.  
+
+```{r fit-model}
+rfModel <- randomForest(
+  formula = class ~ .,
+  data = trainingData
+)
+plot(rfModel)
+```
+
+### Error rate
+```{r error-rate}
+errorRateDf <- data.frame(rfModel$err.rate[rfModel$ntree,])
+colnames(errorRateDf) <- "error rate"
+errorRateDf
+```
+
+### Confusion Matrix
+```{r confusion-matrix}
+rownames(rfModel$confusion) <- c("true initiation", "true non-initiation")
+rfModel$confusion
+```    
+
+
+### Variable importance
+```{r variable-importance}
+imp <- importance(rfModel)
+imp
+varImpPlot(rfModel)
+```
+
+### Partial Depentence
+
+These plots examine the partial dependence of the model outcome on each variable, plotted in order of greatest to least importance. Higher values indicate that those values for a variable are more likely to result in classifying a point as an initiation point. 
+
+```{r partial-plots}
+vars_by_importance <- rownames(imp)[order(imp[, 1], decreasing = TRUE)]
+for (variable in vars_by_importance) {
+  partialPlot(rfModel, 
+              trainingData, 
+              eval(variable), 
+              xlab = variable, 
+              main = paste("Partial Dependence on", variable), 
+              ylim = c(-0.5, 4.5))
+}
+```
+
+## Non-initation Points
+
+Let's see how the outcome varies depending on the non-initiation points. 
+```{r iterate}
+iterations <- 1:params$iterations_count
+
+trainingDataList <- lapply(iterations, function(x) {
+  
+  noninitBuffers <- generateNoninitiationBuffers(
+    noninitBuffersCount,
+    noninitRegion,
+    bufferRadius
+  )
+  
+  trainingData <- extractBufferValues(
+    varsRaster,
+    initBuffers,
+    noninitBuffers,
+    bufferExtractionMethod
+  )
+  
+  # Remove coordinates from data
+  coordsCols <- names(trainingData) %in% c("x", "y")  
+  trainingData[,!coordsCols]
+  
+})
+
+rfModelList <- lapply(trainingDataList, function(d) {
+  randomForest(
+    formula = class ~ .,
+    data = d
+  )
+})
+
+for (i in iterations) {
+  cat("MODEL ", i)
+  trainingData <- trainingDataList[[i]]
+  trainingData_no_y <- trainingData[, 1:6]
+  rfModel <- rfModelList[[i]]
+  pairs(trainingData[trainingData_no_y$class == "non-initiation",], 
+      upper.panel = NULL, 
+      diag.panel = panel.hist, 
+      main = "Non-initation points")
+  cat("\n\nERROR RATE\n")
+  errorRateDf <- data.frame(rfModel$err.rate[rfModel$ntree,])
+  colnames(errorRateDf) <- "error rate"
+  cat(paste0(capture.output(errorRateDf), collapse = "\n"))
+  cat("\n\nCONFUSION MATRIX\n")
+  rownames(rfModel$confusion) <- c("true initiation", "true non-initiation")
+  cat(paste0(capture.output(rfModel$confusion), collapse = "\n"))
+  cat("\n\nIMPORTANCE\n")
+  imp <- importance(rfModel)
+  cat(paste0(capture.output(imp), collapse = "\n"))
+  varImpPlot(rfModel)
+  vars_by_importance <- rownames(imp)[order(imp[, 1], decreasing = TRUE)]
+  par(mfrow = c(3,2))
+  for (variable in vars_by_importance) {
+    partialPlot(rfModel, 
+                trainingData, 
+                eval(variable), 
+                xlab = variable, 
+                main = variable, 
+                ylim = c(-1, 5))
+  }
+  par(mfrow = c(1,1))
+}
+```
+
+## Probability Raster
+
+After fitting a random forest model, we can create a probability raster by fitting the data in the analysis region to the model. We do that for each iteration, and use the average of all values. 
+
+```{r prob-raster}
+analysisAreaVarsRaster <- terra::mask(varsRaster, analysisRegionMask)
+probRasterList <- lapply(rfModelList, function(model) {
+  terra::predict(
+    analysisAreaVarsRaster,
+    model,
+    na.rm = TRUE,
+    type = "prob"
+  )[["initiation"]]
+})
+probRasterList <- terra::rast(probRasterList)
+mean_prob_raster <- terra::app(probRasterList, mean)
+min_prob_raster <- terra::app(probRasterList, min)
+max_prob_raster <- terra::app(probRasterList, max)
+diff_prob_raster <- max_prob_raster - min_prob_raster
+rm(probRasterList)
+
+plotRGB(terrain)
+plot(shade, col=grey(0:100/100), add = TRUE)
+plot(mean_prob_raster, 
+     col = colorRampPalette(c("#56d663", "#ba5123", "#9e2509"))(25), 
+     add = TRUE)
+legend("left", 
+       legend = c(rep(NA, 3), "0.9", rep(NA, 23), "0"), 
+       fill = c(rep("transparent", 3), colorRampPalette(c("#9e2509", "#ba5123", "#56d663"))(25)), 
+       y.intersp = 0.5, 
+       border = "transparent", 
+       title = "Mean Probability")
+```
+
+## Proportion Raster
+
+We can calculate a proportion raster from the probability raster, and use it to see, for example, 50% of landslides are predicted to occur in the green region plotted below. 
+
+```{r prop-raster}
+prop_raster <- createPropRaster(mean_prob_raster)
+
+plotRGB(terrain)
+plot(shade, col=grey(0:100/100), add = TRUE)
+top50 <- terra::app(prop_raster, function(x) x >= 0.5)
+plot(top50, add = TRUE, col = c("transparent", "green"))
+```
+
+Alternatively, the other 50% of landslides are predicted to occur in the rest of the region plotted below. These are the parts of the analysis region with lower probability of landslides. 
+
+```{r plot-prop-raster}
+plotRGB(terrain)
+plot(shade, col=grey(0:100/100), add = TRUE)
+plot(top50, add = TRUE, col = c("green", "transparent"))
+```
+
