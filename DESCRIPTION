@@ -1,0 +1,24 @@
+Package: LandslideSusceptibilityTW
+Title: TerrainWorks Landslide Susceptibility Tools
+Version: 0.0.2
+Authors@R: c(
+  person("TerrainWorks", role = c("aut")),
+  person("Helen", "Miller", email = "helen@ohana.org", role = c("aut", "cre")), 
+  person("Tate", "Brasel"))
+Description: TerrainWorks tools to predict landslide susceptibility from data
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.2
+Imports: 
+  terra,
+  randomForest
+Suggests: 
+  TerrainWorksUtils,
+  rmarkdown,
+  shiny,
+  ggmap,
+  mlr3,
+  mlr3spatiotempcv
+Remotes: 
+  TerrainWorks-Seattle/TerrainWorksUtils

@@ -1,0 +1,8 @@
+^renv$
+^renv\.lock$
+^LandslideSusceptibility\.Rproj$
+^\.Rproj\.user$
+^LICENSE\.md$
+^gis_tools
+^misc
+^reports
