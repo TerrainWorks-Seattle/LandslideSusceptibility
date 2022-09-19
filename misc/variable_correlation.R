@@ -1,7 +1,7 @@
-source("./shared/createInitiationRange.R")
-source("./shared/createAnalysisRegionMask.R")
-source("./shared/generateNoninitiationBuffers.R")
-source("./shared/extractBufferValues.R")
+source("./R/createInitiationRange.R")
+source("./R/createAnalysisRegionMask.R")
+source("./R/generateNoninitiationBuffers.R")
+source("./R/extractBufferValues.R")
 
 refRasterFile = "E:/NetmapData/Scottsburg/elev_scottsburg.flt"
 varRasterFiles = list(
